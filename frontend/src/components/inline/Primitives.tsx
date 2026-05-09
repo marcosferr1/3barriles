@@ -204,6 +204,35 @@ export function Textarea({
   );
 }
 
+/** Fila de tabla con spinner centrado, para reemplazar el viejo "Cargando…". */
+export function TableLoadingRow({
+  colSpan,
+  size = 28,
+  minHeight = 56,
+}: {
+  colSpan: number;
+  size?: number;
+  minHeight?: number;
+}) {
+  return (
+    <tr>
+      <td colSpan={colSpan} style={{ padding: 18 }}>
+        <div
+          role="status"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            minHeight,
+          }}
+        >
+          <Spinner size={size} />
+        </div>
+      </td>
+    </tr>
+  );
+}
+
 /** Spinner circular tipo "CircularProgress". `size` y `thickness` en px. */
 export function Spinner({
   size = 24,

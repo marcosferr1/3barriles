@@ -15,6 +15,7 @@ import {
   CardSection,
   Input,
   Modal,
+  TableLoadingRow,
   THEMED_SCROLLBAR_CLASS,
   tableHorizontalScrollWrapStyle,
 } from '../components/inline/Primitives';
@@ -260,13 +261,7 @@ export default function ProductsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={7} style={{ padding: 14, opacity: 0.7 }}>
-                        Cargando…
-                      </td>
-                    </tr>
-                  ) : null}
+                  {loading ? <TableLoadingRow colSpan={7} /> : null}
                   {!loading &&
                     items.map((x) => (
                       <tr key={x.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
@@ -316,13 +311,7 @@ export default function ProductsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {loading ? (
-                    <tr>
-                      <td colSpan={4} style={{ padding: 14, opacity: 0.7 }}>
-                        Cargando…
-                      </td>
-                    </tr>
-                  ) : null}
+                  {loading ? <TableLoadingRow colSpan={4} /> : null}
                   {!loading &&
                     items.map((x) => (
                       <tr key={x.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>

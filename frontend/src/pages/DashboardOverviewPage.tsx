@@ -6,7 +6,7 @@ import { useDashboardPrefs } from '../settings/useDashboardPrefs';
 import { usePalette, useTheme } from '../theme/ThemeProvider';
 import type { DatePresetId } from '../utils/dateRange';
 import { applyDatePreset, defaultDashboardRange } from '../utils/dateRange';
-import { Badge, Button, Card, CardSection, Input } from '../components/inline/Primitives';
+import { Badge, Button, Card, CardSection, Input, Spinner } from '../components/inline/Primitives';
 
 function moneyArs(amount: string | number) {
   const n = typeof amount === 'string' ? Number(amount) : amount;
@@ -203,7 +203,15 @@ export default function DashboardOverviewPage() {
         </CardSection>
       </Card>
 
-      {loading ? <div style={{ opacity: 0.75 }}>Cargando…</div> : null}
+      {loading ? (
+        <div
+          role="status"
+          aria-label="Cargando…"
+          style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: 24 }}
+        >
+          <Spinner size={32} />
+        </div>
+      ) : null}
       {error ? (
         <div style={{ padding: 12, borderRadius: 14, border: `1px solid ${p.cardBorder}`, background: p.dangerBg }}>
           {error}

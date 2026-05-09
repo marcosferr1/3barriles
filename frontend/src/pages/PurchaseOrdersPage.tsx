@@ -12,6 +12,7 @@ import {
   Card,
   CardSection,
   Input,
+  TableLoadingRow,
   THEMED_SCROLLBAR_CLASS,
   tableHorizontalScrollWrapStyle,
 } from '../components/inline/Primitives';
@@ -342,13 +343,7 @@ export default function PurchaseOrdersPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={5} style={{ padding: 14, opacity: 0.72 }}>
-                      Cargando…
-                    </td>
-                  </tr>
-                ) : null}
+                {loading ? <TableLoadingRow colSpan={5} /> : null}
                 {!loading && orders.length === 0 ? (
                   <tr>
                     <td colSpan={5} style={{ padding: 14, opacity: 0.72 }}>

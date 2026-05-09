@@ -10,6 +10,7 @@ import {
   CardSection,
   Input,
   Modal,
+  TableLoadingRow,
   THEMED_SCROLLBAR_CLASS,
   tableHorizontalScrollWrapStyle,
 } from '../components/inline/Primitives';
@@ -123,11 +124,7 @@ export default function CategoriesPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr>
-                    <td colSpan={2} style={{ padding: 14, opacity: 0.72 }}>
-                      Cargando…
-                    </td>
-                  </tr>
+                  <TableLoadingRow colSpan={2} />
                 ) : items.length === 0 ? (
                   <tr>
                     <td colSpan={2} style={{ padding: 14, opacity: 0.72 }}>

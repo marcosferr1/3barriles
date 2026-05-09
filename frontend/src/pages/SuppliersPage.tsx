@@ -11,6 +11,7 @@ import {
   CardSection,
   Input,
   Modal,
+  TableLoadingRow,
   Textarea,
   THEMED_SCROLLBAR_CLASS,
   tableHorizontalScrollWrapStyle,
@@ -129,13 +130,7 @@ export default function SuppliersPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={3} style={{ padding: 14, opacity: 0.72 }}>
-                      Cargando…
-                    </td>
-                  </tr>
-                ) : null}
+                {loading ? <TableLoadingRow colSpan={3} /> : null}
                 {!loading && items.length === 0 ? (
                   <tr>
                     <td colSpan={3} style={{ padding: 14, opacity: 0.72 }}>

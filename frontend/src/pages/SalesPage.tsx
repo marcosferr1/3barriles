@@ -12,6 +12,7 @@ import {
   CardSection,
   Input,
   Select,
+  TableLoadingRow,
   THEMED_SCROLLBAR_CLASS,
   tableHorizontalScrollWrapStyle,
 } from '../components/inline/Primitives';
@@ -343,13 +344,7 @@ export default function SalesPage() {
                 </tr>
               </thead>
               <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={4} style={{ padding: 14, opacity: 0.72 }}>
-                      Cargando…
-                    </td>
-                  </tr>
-                ) : null}
+                {loading ? <TableLoadingRow colSpan={4} /> : null}
                 {!loading &&
                   sales.map((s) => (
                     <tr key={s.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
