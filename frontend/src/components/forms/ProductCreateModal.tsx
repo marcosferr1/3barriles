@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
-import { Button, Input, Modal } from '../inline/Primitives';
+import { Button, Input, Modal, Spinner } from '../inline/Primitives';
 import { SearchableSelect } from '../inline/SearchableSelect';
+import { usePalette } from '../../theme/ThemeProvider';
 
 type Cat = { id: string; name: string };
 type Supplier = { id: string; name: string };
@@ -22,6 +23,7 @@ export function ProductCreateModal({
   suppliers,
   categories,
   lockSupplierId,
+  loadingMeta = false,
   onRefreshMeta,
   onCreated,
   onRequestNewSupplier,
@@ -33,11 +35,15 @@ export function ProductCreateModal({
   suppliers: Supplier[];
   categories: Cat[];
   lockSupplierId?: string | null;
+  /** Si true, las listas de proveedor/categoría se están cargando: se muestra
+   *  un spinner sobre el contenido para que la apertura se sienta inmediata. */
+  loadingMeta?: boolean;
   onRefreshMeta: () => Promise<void>;
   onCreated?: (row: ProdRow) => void;
   onRequestNewSupplier?: () => void;
   onRequestNewCategory?: () => void;
 }) {
+  const p = usePalette();
   const [name, setName] = useState('');
   const [sku, setSku] = useState('');
   const [supplierId, setSupplierId] = useState('');
@@ -101,8 +107,36 @@ export function ProductCreateModal({
     onClose();
   }
 
+  const showOverlay = loadingMeta && suppliers.length === 0 && categories.length === 0;
+
   return (
     <Modal open={open} title="Nuevo producto" onClose={onClose} panelStyle={{ maxWidth: 560 }}>
+      <div style={{ position: 'relative' }}>
+        {showOverlay ? (
+          <div
+            aria-live="polite"
+            style={{
+              position: 'absolute',
+              inset: -8,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexDirection: 'column',
+              gap: 10,
+              background: `${p.cardBg}cc`,
+              backdropFilter: 'blur(2px)',
+              WebkitBackdropFilter: 'blur(2px)',
+              borderRadius: 12,
+              zIndex: 5,
+              minHeight: 160,
+            }}
+          >
+            <Spinner size={32} thickness={3} />
+            <div style={{ fontSize: 13, color: p.mutedText, fontWeight: 700 }}>
+              Cargando proveedores y categorías…
+            </div>
+          </div>
+        ) : null}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div>
           <div style={{ fontWeight: 800, marginBottom: 6 }}>Nombre</div>
@@ -215,6 +249,7 @@ export function ProductCreateModal({
             Guardar
           </Button>
         </div>
+      </div>
       </div>
     </Modal>
   );

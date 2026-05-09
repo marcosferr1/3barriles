@@ -265,3 +265,73 @@
     max-width: none;
   }
 }
+
+/* Ventas mercadería · línea (producto, cant., quitar) sin desbordar en móvil */
+.sale-line {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.sale-line__product {
+  min-width: 0;
+}
+
+.sale-line__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.sale-line__qty {
+  flex: 0 0 96px;
+  width: 96px;
+  max-width: 100%;
+}
+
+.sale-line__quit {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .sale-line {
+    grid-template-columns: minmax(0, 2fr) 120px max-content;
+  }
+
+  .sale-line__controls {
+    display: contents;
+  }
+
+  .sale-line__qty {
+    flex: unset;
+    width: 100%;
+  }
+
+  .sale-line__quit {
+    flex: unset;
+  }
+}
+
+/* Spinner circular (CircularProgress) */
+@keyframes spinnerRotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.app-spinner {
+  display: inline-block;
+  width: var(--spinner-size, 24px);
+  height: var(--spinner-size, 24px);
+  border-radius: 50%;
+  border: var(--spinner-thickness, 3px) solid var(--spinner-track, rgba(127, 127, 127, 0.18));
+  border-top-color: var(--spinner-color, currentColor);
+  animation: spinnerRotate 0.7s linear infinite;
+  box-sizing: border-box;
+}

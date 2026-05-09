@@ -204,6 +204,41 @@ export function Textarea({
   );
 }
 
+/** Spinner circular tipo "CircularProgress". `size` y `thickness` en px. */
+export function Spinner({
+  size = 24,
+  thickness = 3,
+  color,
+  trackColor,
+  label = 'Cargando…',
+  style,
+}: {
+  size?: number;
+  thickness?: number;
+  color?: string;
+  trackColor?: string;
+  label?: string;
+  style?: React.CSSProperties;
+}) {
+  const p = usePalette();
+  return (
+    <span
+      role="status"
+      aria-label={label}
+      className="app-spinner"
+      style={
+        {
+          '--spinner-size': `${size}px`,
+          '--spinner-thickness': `${thickness}px`,
+          '--spinner-color': color ?? p.primary,
+          '--spinner-track': trackColor ?? 'rgba(127, 127, 127, 0.18)',
+          ...(style || {}),
+        } as React.CSSProperties
+      }
+    />
+  );
+}
+
 export function Modal({
   open,
   title,

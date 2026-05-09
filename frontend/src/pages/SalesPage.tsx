@@ -236,22 +236,33 @@ export default function SalesPage() {
 
                 return (
                   <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(200px,2fr) 120px auto', gap: 10 }}>
-                      <SearchableSelect
-                        options={productOptions}
-                        value={ln.productId}
-                        onChange={(id) => updateLine(idx, { productId: id })}
-                        emptyLabel="Producto…"
-                      />
-                      <Input
-                        value={ln.qty}
-                        onChange={(e) => updateLine(idx, { qty: e.target.value })}
-                        placeholder="Cant."
-                        inputMode="numeric"
-                      />
-                      <Button type="button" variant="outline" disabled={lines.length <= 1} onClick={() => removeLine(idx)}>
-                        Quitar
-                      </Button>
+                    <div className="sale-line">
+                      <div className="sale-line__product">
+                        <SearchableSelect
+                          options={productOptions}
+                          value={ln.productId}
+                          onChange={(id) => updateLine(idx, { productId: id })}
+                          emptyLabel="Producto…"
+                        />
+                      </div>
+                      <div className="sale-line__controls">
+                        <Input
+                          className="sale-line__qty"
+                          value={ln.qty}
+                          onChange={(e) => updateLine(idx, { qty: e.target.value })}
+                          placeholder="Cant."
+                          inputMode="numeric"
+                        />
+                        <Button
+                          className="sale-line__quit"
+                          type="button"
+                          variant="outline"
+                          disabled={lines.length <= 1}
+                          onClick={() => removeLine(idx)}
+                        >
+                          Quitar
+                        </Button>
+                      </div>
                     </div>
                     {ln.productId && pr && q > 0 && avail != null ? (
                       <div style={{ fontSize: 12, paddingLeft: 2 }}>

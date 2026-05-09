@@ -85,6 +85,7 @@ export default function ProductsPage() {
   const [qtyDelta, setQtyDelta] = useState('0');
   const [note, setNote] = useState('');
   const [pendingDeactivate, setPendingDeactivate] = useState<Prod | null>(null);
+  const [createMetaLoading, setCreateMetaLoading] = useState(false);
 
   async function refresh() {
     if (!token) return;
@@ -114,10 +115,14 @@ export default function ProductsPage() {
     setSuppliers((sups as Paginated<Supplier>).items);
   }
 
-  async function openCreateProduct() {
+  /** Abre el modal de inmediato (con spinner si todavía no cargaron las listas).
+   *  Refresca proveedores/categorías en paralelo: si no había nada, se ven al toque
+   *  cuando vuelve el fetch; si ya había, no hay que esperar. */
+  function openCreateProduct() {
     if (!token) return;
-    await refreshMetaOnly();
     setCreateOpen(true);
+    setCreateMetaLoading(true);
+    refreshMetaOnly().finally(() => setCreateMetaLoading(false));
   }
 
   useEffect(() => {
@@ -227,7 +232,7 @@ export default function ProductsPage() {
             style={{ width: 280, maxWidth: '100%' }}
           />
           {tab === 'stock' ? (
-            <Button type="button" onClick={() => void openCreateProduct()}>
+            <Button type="button" onClick={openCreateProduct}>
               Nuevo producto
             </Button>
           ) : (
@@ -355,6 +360,7 @@ export default function ProductsPage() {
         token={token}
         suppliers={suppliers}
         categories={cats}
+        loadingMeta={createMetaLoading}
         onRefreshMeta={refreshMetaOnly}
         onRequestNewSupplier={() => setSupplierQuickOpen(true)}
         onRequestNewCategory={() => setCategoryQuickOpen(true)}
