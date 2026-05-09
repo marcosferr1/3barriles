@@ -17,7 +17,7 @@ Century Gothic no está disponible gratuitamente como webfont en todas las plata
 - Raíz del repo: [`.env.example`](./.env.example) lista **todas** las variables que usa `docker-compose.dev.yml` (sin valores mágicos en el YAML): copiala a `.env` y ajustá.
 - **`docker-compose.dev.yml`**: casi todo viene del `.env`; **excepción**: dentro del backend en Docker **`DB_HOST=db`** y **`DB_PORT=5432`** fijos para hablar con el servicio Postgres de la misma red de Compose (`127.0.0.1` dentro del contenedor sería él mismo).
 - **`DB_HOST` / `DB_PORT` del `.env`**: usarlos cuando **no** usa Docker para el backend (por ejemplo `cd backend && npm run dev`) contra Postgres en tu máquina.
-- En backend también podés usar `DATABASE_URL` (cloud) según comentarios en `.env.example`.
+- En backend también podés usar `DATABASE_URL` (cloud) según comentarios en `.env.example`. Para proveedores con cert self-signed (Neon, Supabase) sumá `DB_SSL_REJECT_UNAUTHORIZED=false`.
 
 ## Usuario para ingresar al panel
 
@@ -92,6 +92,67 @@ backend/      Express + Sequelize · migraciones · modelos dominio vinoteca/bar
 frontend/     Vite SPA · ThemeProvider marca · páginas dashboard/productos/etc.
 docker-compose.yml / docker-compose.dev.yml
 ```
+
+## Deploy a producción (Neon + Railway + Vercel)
+
+Arquitectura objetivo:
+
+- **DB**: Postgres en [Neon](https://neon.tech).
+- **Backend**: Node/Express en [Railway](https://railway.com).
+- **Frontend**: Vite SPA en [Vercel](https://vercel.com).
+
+### 1) Neon (DB)
+
+1. Crear proyecto y copiar el connection string (`postgresql://user:pass@ep-xxx.neon.tech/dbname?sslmode=require`).
+2. Para el backend en Railway, usar el connection **directo** (no el `-pooler`) durante migraciones; para tráfico normal cualquiera anda.
+
+### 2) Railway (backend)
+
+El repo trae `backend/railway.json` con builder Nixpacks y `startCommand: npm run start:prod` (corre `migrate` y luego `start`, sin seed).
+
+1. **New Project → Deploy from GitHub repo**.
+2. **Root Directory**: `backend`.
+3. **Variables** (Settings → Variables):
+   - `DATABASE_URL` = la URL de Neon (con `?sslmode=require`)
+   - `DB_SSL_REJECT_UNAUTHORIZED` = `false` (Neon usa cert que no valida con la cadena pública por default)
+   - `JWT_SECRET` = string fuerte (`openssl rand -hex 48`)
+   - `NODE_ENV` = `production`
+   - `ADMIN_EMAIL`, `ADMIN_PASSWORD` reales
+   - `AUTO_SEED_ADMIN` = `true` (crea el admin la primera vez; idempotente)
+   - `CORS_ORIGIN` = la URL final de Vercel (después del paso 3)
+4. **Networking → Generate Domain**: anotá la URL pública (ej. `https://3barriles-backend.up.railway.app`). Probar `GET /health`.
+5. **Seed demo (opcional, una vez)**: desde la consola del servicio en Railway o con CLI:
+
+```bash
+railway run --service backend npm run seed
+```
+
+> El `startCommand` corre `migrate` en cada deploy, pero **no** corre seeds (idempotentes pero ruidosos). El admin se siembra solo en el arranque vía `AUTO_SEED_ADMIN`.
+
+### 3) Vercel (frontend)
+
+1. **Add New Project** → importar el repo.
+2. **Root Directory**: `frontend`.
+3. **Framework Preset**: Vite (autodetectado). Build: `npm run build`. Output: `dist`.
+4. **Environment Variables**:
+   - `VITE_API_URL` = `https://<tu-backend>.up.railway.app` (sin barra final).
+5. Deploy. El `frontend/vercel.json` ya hace SPA fallback al `index.html`.
+
+### 4) Cerrar el círculo (CORS)
+
+En Railway, actualizar `CORS_ORIGIN` con la URL final de Vercel (separadas por coma si querés permitir previews):
+
+```
+CORS_ORIGIN=https://3barriles.vercel.app,https://3barriles-git-main-tu-user.vercel.app
+```
+
+Redeployar el servicio para que tome la variable.
+
+### Troubleshooting
+
+- **`self-signed certificate in certificate chain`** al conectar a Neon → poner `DB_SSL_REJECT_UNAUTHORIZED=false` en Railway.
+- **CORS bloqueado** → la URL del frontend tiene que estar **exacta** en `CORS_ORIGIN` (con `https://`, sin barra final).
+- **`Failed to fetch` en login en producción** → revisar que `VITE_API_URL` en Vercel apunte a la URL pública de Railway y que el dominio de Railway esté arriba (`/health`).
 
 ## Endpoints útiles (`/`)
 
