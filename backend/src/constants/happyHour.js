@@ -1,0 +1,12 @@
+'use strict';
+
+const HAPPY_HOUR_MODES = {
+  OFF: 'OFF',
+  SPECIAL_PRICE: 'SPECIAL_PRICE',
+  DOUBLE_QTY: 'DOUBLE_QTY',
+  PROMO_2FOR1: 'PROMO_2FOR1',
+};
+
+const ALLOWED_MODES = new Set(Object.values(HAPPY_HOUR_MODES));
+
+module.exports = { HAPPY_HOUR_MODES, ALLOWED_MODES };

@@ -1,0 +1,51 @@
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-barriles_db}
+      POSTGRES_USER: ${DB_USER:-barriles_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-change_me}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: development
+      PORT: 4000
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: ${DB_NAME:-barriles_db}
+      DB_USER: ${DB_USER:-barriles_user}
+      DB_PASSWORD: ${DB_PASSWORD:-change_me}
+      JWT_SECRET: ${JWT_SECRET:-change_me_jwt_secret}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-admin@3barriles.local}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-change_me_admin_password}
+      AUTO_SEED_ADMIN: "true"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:5173}
+    ports:
+      - "4000:4000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:

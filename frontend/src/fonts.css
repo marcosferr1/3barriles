@@ -1,0 +1,23 @@
+@font-face {
+  font-family: 'Century Gothic';
+  src: url('/fonts/centurygothic.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Century Gothic';
+  src: url('/fonts/centurygothic_bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Ananda Black Personal Use';
+  src: url('/fonts/Ananda_Black_Personal_Use.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}

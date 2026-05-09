@@ -1,0 +1,267 @@
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@tailwind base;
+
+@custom-variant dark (&:is(.dark *));
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #f3f0e6;
+  --foreground: #1f3d2b;
+  --card: #ffffff;
+  --card-foreground: #1f3d2b;
+  --popover: #ffffff;
+  --popover-foreground: #1f3d2b;
+  --primary: #1f3d2b;
+  --primary-foreground: #f3f0e6;
+  --secondary: #f3f0e6;
+  --secondary-foreground: #1f3d2b;
+  --muted: #d7cab1;
+  --muted-foreground: rgba(31, 61, 43, 0.65);
+  --accent: #c9a24d;
+  --accent-foreground: #1a0f13;
+  --destructive: #591e2a;
+  --border: #d7cab1;
+  --input: #d7cab1;
+  --ring: #c9a24d;
+  --radius: 0.625rem;
+  --sidebar: #591e2a;
+  --sidebar-foreground: #f3f0e6;
+  --sidebar-primary: #c9a24d;
+  --sidebar-primary-foreground: #1a0f13;
+  --sidebar-accent: rgba(243, 240, 230, 0.12);
+  --sidebar-accent-foreground: #f3f0e6;
+  --sidebar-border: rgba(243, 240, 230, 0.18);
+  --sidebar-ring: #c9a24d;
+}
+
+.dark {
+  --background: #1a0f13;
+  --foreground: #f3f0e6;
+  --card: rgba(89, 30, 42, 0.35);
+  --card-foreground: #f3f0e6;
+  --popover: #2a161c;
+  --popover-foreground: #f3f0e6;
+  --primary: #c9a24d;
+  --primary-foreground: #1a0f13;
+  --secondary: rgba(243, 240, 230, 0.12);
+  --secondary-foreground: #f3f0e6;
+  --muted: rgba(243, 240, 230, 0.15);
+  --muted-foreground: rgba(243, 240, 230, 0.68);
+  --accent: #1f3d2b;
+  --accent-foreground: #f3f0e6;
+  --destructive: #ef4444;
+  --border: rgba(243, 240, 230, 0.14);
+  --input: rgba(243, 240, 230, 0.18);
+  --ring: #c9a24d;
+}
+
+@theme inline {
+  --font-sans: 'Century Gothic', 'CenturyGothic', ui-sans-serif, system-ui, sans-serif;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
+  }
+}
+
+/* SearchableSelect: hover/fondo definidos por ThemeProvider (--ss-row-hover / --ss-row-selected) */
+.searchable-select-popover .searchable-select-row--selected {
+  background: var(--ss-row-selected, rgba(127, 127, 127, 0.12));
+}
+.searchable-select-popover .searchable-select-row:hover {
+  background: var(--ss-row-hover, rgba(127, 127, 127, 0.08));
+}
+.searchable-select-popover .searchable-select-row--selected:hover {
+  background: var(--ss-row-selected, rgba(127, 127, 127, 0.12));
+  filter: brightness(1.04);
+}
+
+/* Scrollbars temáticos (--scrollbar-* inyectados desde ThemeProvider) */
+.themed-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb, rgba(127, 127, 127, 0.45)) var(--scrollbar-track, transparent);
+}
+
+.themed-scrollbar::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-track {
+  background: var(--scrollbar-track, transparent);
+  border-radius: 999px;
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb, rgba(127, 127, 127, 0.45));
+  border-radius: 999px;
+  border: 2px solid var(--scrollbar-track, transparent);
+}
+
+.themed-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover, rgba(127, 127, 127, 0.65));
+}
+
+.themed-scrollbar::-webkit-scrollbar-corner {
+  background: var(--scrollbar-corner, var(--scrollbar-track));
+}
+
+/* Ventas BAR · fila de línea: no desborda en móvil */
+.bar-sales-line {
+  display: grid;
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+.bar-sales-line__product {
+  min-width: 0;
+}
+
+.bar-sales-line-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.bar-sales-line__qty {
+  flex: 0 0 88px;
+  width: 88px;
+  max-width: 100%;
+}
+
+.bar-sales-line__hh {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+
+.bar-sales-line__quit {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .bar-sales-line {
+    grid-template-columns: minmax(0, 1.5fr) 88px auto max-content;
+  }
+
+  .bar-sales-line-controls {
+    display: contents;
+  }
+
+  .bar-sales-line__qty {
+    flex: unset;
+  }
+
+  .bar-sales-line__hh {
+    flex: unset;
+    white-space: nowrap;
+  }
+
+  .bar-sales-line__quit {
+    flex: unset;
+    min-width: unset;
+  }
+}
+
+/* Compras a proveedor · línea de ítem (evita desborde en móvil) */
+.po-line {
+  display: grid;
+  gap: 10px;
+  align-items: end;
+  width: 100%;
+  min-width: 0;
+}
+
+.po-line__product {
+  min-width: 0;
+}
+
+.po-line__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: flex-end;
+  width: 100%;
+  min-width: 0;
+}
+
+.po-line__field {
+  flex: 1 1 132px;
+  min-width: 0;
+}
+
+.po-line__field--qty {
+  flex: 1 1 108px;
+  max-width: 140px;
+}
+
+.po-line__field--cost {
+  flex: 1 1 132px;
+}
+
+.po-line__field--remove {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .po-line {
+    grid-template-columns: minmax(0, 2fr) 120px 140px max-content;
+  }
+
+  .po-line__controls {
+    display: contents;
+  }
+
+  .po-line__field {
+    flex: unset;
+    max-width: none;
+  }
+
+  .po-line__field--qty {
+    max-width: none;
+  }
+}
