@@ -145,12 +145,14 @@ async function summary(req, res, next) {
     );
     const topProductsTotal = Number(topCountRows?.[0]?.c ?? 0);
 
+    // Solo productos con seguimiento de stock: los tragos BAR (tracks_stock=false)
+    // no generan stock_movements y darían siempre stock=0 ≤ reorder_level.
     const lowStockCountRows = await db.sequelize.query(
       `SELECT COUNT(*)::int AS c FROM (
         SELECT p.id
         FROM products p
         LEFT JOIN stock_movements sm ON sm.product_id = p.id
-        WHERE p.active = true
+        WHERE p.active = true AND p.tracks_stock = true
         GROUP BY p.id, p.reorder_level
         HAVING COALESCE(SUM(sm.qty_delta), 0) <= p.reorder_level
       ) x`,
@@ -167,7 +169,7 @@ async function summary(req, res, next) {
              COALESCE(SUM(sm.qty_delta), 0)::int AS stock
       FROM products p
       LEFT JOIN stock_movements sm ON sm.product_id = p.id
-      WHERE p.active = true
+      WHERE p.active = true AND p.tracks_stock = true
       GROUP BY p.id, p.name, p.sku, p.reorder_level
       HAVING COALESCE(SUM(sm.qty_delta), 0) <= p.reorder_level
       ORDER BY stock ASC, p.name ASC
