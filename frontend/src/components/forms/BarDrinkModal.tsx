@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../../api/client';
-import { Button, Input, Modal, Select } from '../inline/Primitives';
+import { toast } from '@/lib/toast';
+import { Button, Input, Modal } from '../inline/Primitives';
 import { DEFAULT_SUPPLIER_ID } from '../../constants/defaultSupplier';
 
 export type HappyHourMode = 'OFF' | 'SPECIAL_PRICE' | 'DOUBLE_QTY' | 'PROMO_2FOR1';
@@ -34,8 +35,6 @@ export function BarDrinkModal({
   const [sku, setSku] = useState('');
   const [salePrice, setSalePrice] = useState('0');
   const [happyHourEnabled, setHappyHourEnabled] = useState(false);
-  const [happyHourMode, setHappyHourMode] = useState<HappyHourMode>('SPECIAL_PRICE');
-  const [happyHourUnitPrice, setHappyHourUnitPrice] = useState('0');
 
   useEffect(() => {
     if (!open) return;
@@ -43,27 +42,19 @@ export function BarDrinkModal({
       setName(editing.name || '');
       setSku(editing.sku || '');
       setSalePrice(String(editing.salePrice ?? '0'));
-      setHappyHourEnabled(!!editing.happyHourEnabled);
-      const m = (editing.happyHourMode as HappyHourMode) || 'OFF';
-      setHappyHourMode(m !== 'OFF' ? m : 'SPECIAL_PRICE');
-      setHappyHourUnitPrice(String(editing.happyHourUnitPrice ?? '0'));
+      setHappyHourEnabled(!!editing.happyHourEnabled && (editing.happyHourMode as string) !== 'OFF');
     } else {
       setName('');
       setSku('');
       setSalePrice('0');
       setHappyHourEnabled(false);
-      setHappyHourMode('SPECIAL_PRICE');
-      setHappyHourUnitPrice('0');
     }
   }, [open, editing]);
 
   async function save() {
     if (!name.trim()) return;
     const sp = Number(String(salePrice).replace(',', '.')) || 0;
-    const hhp = Number(String(happyHourUnitPrice).replace(',', '.')) || 0;
-    const modes: HappyHourMode[] = ['SPECIAL_PRICE', 'DOUBLE_QTY', 'PROMO_2FOR1'];
-    const modeForApi =
-      happyHourEnabled && modes.includes(happyHourMode) ? happyHourMode : 'OFF';
+    const HH_MODE_2X1: HappyHourMode = 'PROMO_2FOR1';
 
     if (editing) {
       await api.products.patch(token, editing.id, {
@@ -71,9 +62,10 @@ export function BarDrinkModal({
         sku: sku.trim() || null,
         salePrice: sp,
         happyHourEnabled,
-        happyHourMode: happyHourEnabled ? modeForApi : 'OFF',
-        happyHourUnitPrice: happyHourEnabled && modeForApi === 'SPECIAL_PRICE' ? hhp : null,
+        happyHourMode: happyHourEnabled ? HH_MODE_2X1 : 'OFF',
+        happyHourUnitPrice: null,
       });
+      toast.success('Trago actualizado');
     } else {
       await api.products.create(token, {
         name: name.trim(),
@@ -85,9 +77,10 @@ export function BarDrinkModal({
         salePrice: sp,
         initialQty: 0,
         happyHourEnabled,
-        happyHourMode: happyHourEnabled ? modeForApi : 'OFF',
-        happyHourUnitPrice: happyHourEnabled && modeForApi === 'SPECIAL_PRICE' ? hhp : undefined,
+        happyHourMode: happyHourEnabled ? HH_MODE_2X1 : 'OFF',
+        happyHourUnitPrice: happyHourEnabled ? null : undefined,
       });
+      toast.success('Trago creado');
     }
     await onSaved();
     onClose();
@@ -108,30 +101,23 @@ export function BarDrinkModal({
           <div style={{ fontWeight: 800, marginBottom: 6 }}>Precio de lista</div>
           <Input value={salePrice} onChange={(e) => setSalePrice(e.target.value)} inputMode="decimal" />
         </div>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontWeight: 700 }}>
-          <input type="checkbox" checked={happyHourEnabled} onChange={(e) => setHappyHourEnabled(e.target.checked)} />{' '}
-          Happy hour disponible en la venta BAR
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontWeight: 700, lineHeight: 1.45 }}>
+          <input
+            type="checkbox"
+            checked={happyHourEnabled}
+            onChange={(e) => setHappyHourEnabled(e.target.checked)}
+            style={{ marginTop: 3, flexShrink: 0 }}
+          />
+          <span>
+            Happy hour 2×1 en venta BAR{' '}
+            <span style={{ fontWeight: 600, opacity: 0.75 }}>(pagás 1 al precio de lista, van 2 tragos en el ticket)</span>
+          </span>
         </label>
         {happyHourEnabled ? (
-          <>
-            <div>
-              <div style={{ fontWeight: 800, marginBottom: 6 }}>Modo happy hour</div>
-              <Select value={happyHourMode} onChange={(e) => setHappyHourMode(e.target.value as HappyHourMode)}>
-                <option value="SPECIAL_PRICE">Precio especial por trago</option>
-                <option value="DOUBLE_QTY">Doble cantidad (2× lista, mismo precio unit.)</option>
-                <option value="PROMO_2FOR1">Promo: 2 tragos cobrás 1 lista (cant. efectiva ×2, precio u. mitad)</option>
-              </Select>
-              <div style={{ fontSize: 12, opacity: 0.72, marginTop: 6, lineHeight: 1.45 }}>
-                En la venta BAR podés tildar Happy hour por línea. El ticket guarda texto «(happy hour)» y montos auditables.
-              </div>
-            </div>
-            {happyHourMode === 'SPECIAL_PRICE' ? (
-              <div>
-                <div style={{ fontWeight: 800, marginBottom: 6 }}>Precio unitario happy hour</div>
-                <Input value={happyHourUnitPrice} onChange={(e) => setHappyHourUnitPrice(e.target.value)} inputMode="decimal" />
-              </div>
-            ) : null}
-          </>
+          <div style={{ fontSize: 12, opacity: 0.78, lineHeight: 1.5, paddingLeft: 28 }}>
+            Es el 2×1 de siempre: el total de la línea con happy hour coincide con cobrar un trago a precio lista, pero se
+            registran 2 unidades. En <strong>Ventas BAR</strong> tildás happy hour por línea cuando corresponda.
+          </div>
         ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
           <Button type="button" variant="outline" onClick={onClose}>

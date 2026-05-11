@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { usePalette } from '../theme/ThemeProvider';
 import { ConfirmModal } from '../components/inline/ConfirmModal';
 import { PaginationBar } from '../components/inline/PaginationBar';
@@ -70,6 +71,7 @@ export default function CategoriesPage() {
   async function onCreate() {
     if (!token || !createName.trim()) return;
     await api.categories.create(token, { name: createName.trim() });
+    toast.success('Categoría creada');
     setCreateName('');
     setCreateOpen(false);
     await refresh();
@@ -84,6 +86,7 @@ export default function CategoriesPage() {
   async function onSaveEdit() {
     if (!token || !editRow || !editName.trim()) return;
     await api.categories.patch(token, editRow.id, { name: editName.trim() });
+    toast.success('Categoría actualizada');
     setEditOpen(false);
     setEditRow(null);
     await refresh();
@@ -92,6 +95,7 @@ export default function CategoriesPage() {
   async function execDelete() {
     if (!token || !pendingDelete) return;
     await api.categories.remove(token, pendingDelete.id);
+    toast.success('Categoría eliminada');
     await refresh();
   }
 

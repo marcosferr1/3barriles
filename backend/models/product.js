@@ -17,6 +17,7 @@ module.exports = (sequelize, DataTypes) => {
       happyHourUnitPrice: { type: DataTypes.DECIMAL(12, 2), allowNull: true },
       reorderLevel: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 5 },
       active: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+      isBundle: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
     },
     { tableName: 'products' }
   );
@@ -27,6 +28,7 @@ module.exports = (sequelize, DataTypes) => {
     Product.hasMany(models.PurchaseOrderLine, { foreignKey: 'productId', as: 'purchaseOrderLines' });
     Product.hasMany(models.SaleLine, { foreignKey: 'productId', as: 'saleLines' });
     Product.hasMany(models.StockMovement, { foreignKey: 'productId', as: 'stockMovements' });
+    Product.hasMany(models.ProductBundleItem, { foreignKey: 'bundleProductId', as: 'bundleItems' });
   };
 
   return Product;

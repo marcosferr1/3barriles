@@ -25,23 +25,20 @@ export function ConfirmModal({
 }) {
   const p = usePalette();
   const [busy, setBusy] = useState(false);
-  const [submitError, setSubmitError] = useState('');
 
   useEffect(() => {
     if (!open) {
       setBusy(false);
-      setSubmitError('');
     }
   }, [open]);
 
   async function handleConfirm() {
     setBusy(true);
-    setSubmitError('');
     try {
       await Promise.resolve(onConfirm());
       onClose();
-    } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'No se pudo completar la acción.');
+    } catch {
+      // Errores de API ya muestran toast desde api/client; no duplicar texto en el modal.
     } finally {
       setBusy(false);
     }
@@ -59,11 +56,6 @@ export function ConfirmModal({
     <Modal open={open} title={title} onClose={() => !busy && onClose()} panelStyle={{ maxWidth: 460 }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ fontSize: 14, lineHeight: 1.5, color: p.text, opacity: 0.92 }}>{description}</div>
-        {submitError ? (
-          <div role="alert" style={{ fontSize: 13, lineHeight: 1.45, color: p.dangerText, fontWeight: 700 }}>
-            {submitError}
-          </div>
-        ) : null}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
           <Button type="button" variant="outline" disabled={busy} onClick={() => !busy && onClose()}>
             {cancelLabel}

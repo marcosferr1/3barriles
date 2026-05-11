@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { usePalette } from '../theme/ThemeProvider';
 import { SupplierQuickModal } from '../components/forms/SupplierQuickModal';
 import { ConfirmModal } from '../components/inline/ConfirmModal';
@@ -91,6 +92,7 @@ export default function SuppliersPage() {
       email: editEmail.trim() || null,
       notes: editNotes.trim() || null,
     });
+    toast.success('Proveedor actualizado');
     setEditOpen(false);
     setEditRow(null);
     await refresh();
@@ -99,6 +101,7 @@ export default function SuppliersPage() {
   async function execDeleteSupplier() {
     if (!token || !pendingDelete) return;
     await api.suppliers.remove(token, pendingDelete.id);
+    toast.success('Proveedor eliminado');
     await refresh();
   }
 

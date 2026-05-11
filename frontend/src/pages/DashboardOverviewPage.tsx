@@ -29,7 +29,18 @@ type DashboardSummary = {
   recentPurchases: Array<{ id: string; receivedAt?: string | Date | null; supplier?: { name?: string | null } }>;
   recentPurchasesTotal: number;
   recentPurchasesHasMore: boolean;
-  recentSales: Array<{ id: string; soldAt?: string | Date | null; paymentMethod?: string; totalAmount?: string }>;
+  recentSales: Array<{
+    id: string;
+    soldAt?: string | Date | null;
+    paymentMethod?: string;
+    totalAmount?: string;
+    lines?: Array<{
+      qty: number;
+      unitPrice?: string | number | null;
+      lineDescription?: string | null;
+      product?: { id?: string; name?: string | null; isBundle?: boolean };
+    }>;
+  }>;
   recentSalesTotal: number;
   recentSalesHasMore: boolean;
   topProducts: Array<{ id?: string; name?: string; qty_sold?: number }>;
@@ -59,7 +70,8 @@ export default function DashboardOverviewPage() {
   const { mode } = useTheme();
   const { visible } = useDashboardPrefs();
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [retryTick, setRetryTick] = useState(0);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
 
   const [from, setFrom] = useState(() => defaultDashboardRange().from);
@@ -75,7 +87,7 @@ export default function DashboardOverviewPage() {
     async function load() {
       if (!token) return;
       setLoading(true);
-      setError(null);
+      setLoadFailed(false);
       try {
         const data = await api.dashboard.summary(token, {
           from,
@@ -85,9 +97,15 @@ export default function DashboardOverviewPage() {
           topLimit,
           stockLimit,
         });
-        if (!cancelled) setSummary(data as DashboardSummary);
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error');
+        if (!cancelled) {
+          setSummary(data as DashboardSummary);
+          setLoadFailed(false);
+        }
+      } catch {
+        if (!cancelled) {
+          setSummary(null);
+          setLoadFailed(true);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -96,7 +114,7 @@ export default function DashboardOverviewPage() {
     return () => {
       cancelled = true;
     };
-  }, [token, from, to, purchaseLimit, saleLimit, topLimit, stockLimit]);
+  }, [token, from, to, purchaseLimit, saleLimit, topLimit, stockLimit, retryTick]);
 
   function applyPreset(id: DatePresetId) {
     const r = applyDatePreset(id);
@@ -212,10 +230,18 @@ export default function DashboardOverviewPage() {
           <Spinner size={32} />
         </div>
       ) : null}
-      {error ? (
-        <div style={{ padding: 12, borderRadius: 14, border: `1px solid ${p.cardBorder}`, background: p.dangerBg }}>
-          {error}
-        </div>
+      {!loading && loadFailed ? (
+        <Card>
+          <CardSection style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ fontWeight: 800, lineHeight: 1.45 }}>No pudimos cargar el resumen del panel.</div>
+            <div style={{ fontSize: 14, opacity: 0.8, lineHeight: 1.45 }}>
+              Revisá la conexión o probá de nuevo; el detalle del error apareció en un aviso arriba.
+            </div>
+            <Button type="button" variant="primary" size="sm" onClick={() => setRetryTick((t) => t + 1)}>
+              Reintentar
+            </Button>
+          </CardSection>
+        </Card>
       ) : null}
 
       {!loading && allHidden ? (
@@ -359,11 +385,32 @@ export default function DashboardOverviewPage() {
                           border: `1px solid ${p.cardBorder}`,
                         }}
                       >
-                        <div style={{ fontWeight: 750 }}>
+                        <div style={{ fontWeight: 750, minWidth: 0 }}>
                           {PAY_LABEL[s.paymentMethod || ''] || s.paymentMethod || '—'}
                           <div style={{ fontSize: 13, opacity: 0.72 }}>
                             {s.soldAt ? new Date(s.soldAt).toLocaleString('es-AR') : ''}
                           </div>
+                          {(s.lines || []).length ? (
+                            <ul
+                              style={{
+                                margin: '8px 0 0',
+                                paddingLeft: 18,
+                                fontSize: 12,
+                                opacity: 0.82,
+                                fontWeight: 600,
+                                lineHeight: 1.45,
+                              }}
+                            >
+                              {(s.lines || []).slice(0, 6).map((ln, i) => (
+                                <li key={i}>
+                                  {ln.lineDescription || ln.product?.name || 'Ítem'} × {ln.qty}
+                                  {ln.product?.isBundle ? (
+                                    <span style={{ opacity: 0.75 }}> (pack)</span>
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          ) : null}
                         </div>
                         <div style={{ fontWeight: 900 }}>{moneyArs(String(s.totalAmount || '0'))}</div>
                       </div>

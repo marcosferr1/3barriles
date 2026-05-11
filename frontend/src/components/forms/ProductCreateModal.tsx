@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api/client';
+import { toast } from '@/lib/toast';
 import { Button, Input, Modal, Spinner } from '../inline/Primitives';
 import { SearchableSelect } from '../inline/SearchableSelect';
 import { usePalette } from '../../theme/ThemeProvider';
@@ -101,6 +102,7 @@ export function ProductCreateModal({
         : 0,
       reorderLevel: Number(reorderLevel) || 5,
     })) as ProdRow;
+    toast.success('Producto creado');
     reset();
     await onRefreshMeta();
     onCreated?.(row);

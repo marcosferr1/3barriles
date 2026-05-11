@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { usePalette } from '../theme/ThemeProvider';
 import { ConfirmModal } from '../components/inline/ConfirmModal';
 import { PaginationBar } from '../components/inline/PaginationBar';
@@ -11,6 +12,7 @@ import {
   Card,
   CardSection,
   Input,
+  Modal,
   Select,
   TableLoadingRow,
   THEMED_SCROLLBAR_CLASS,
@@ -19,16 +21,25 @@ import {
 import { clampListPageSizeDefault, PRODUCT_PICKER_PAGE_SIZE, useListPageSize } from '../settings/useListPageSize';
 import type { Paginated } from '../types/api';
 
+type BundleItemRow = {
+  componentProductId?: string;
+  qtyPerBundle?: number;
+  componentProduct?: { id?: string; name?: string };
+};
+
 type Prod = {
   id: string;
   name: string;
   sku?: string | null;
   salePrice?: string | number;
   stock?: number;
+  tracksStock?: boolean;
+  isBundle?: boolean;
+  bundleItems?: BundleItemRow[];
 };
 type SaleLineDraft = { productId: string; qty: string };
 type SaleServerLine = {
-  id: string;
+  id?: string;
   qty: number;
   unitPrice?: string | number | null;
   lineDescription?: string | null;
@@ -75,6 +86,12 @@ export default function SalesPage() {
   const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'TRANSFER' | 'CARD'>('CASH');
   const [lines, setLines] = useState<SaleLineDraft[]>([{ productId: '', qty: '1' }]);
   const [confirmSaleOpen, setConfirmSaleOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaleId, setEditSaleId] = useState<string | null>(null);
+  const [editPayment, setEditPayment] = useState<'CASH' | 'TRANSFER' | 'CARD'>('CASH');
+  const [editLines, setEditLines] = useState<SaleLineDraft[]>([{ productId: '', qty: '1' }]);
+  const [deleteTarget, setDeleteTarget] = useState<SaleServer | null>(null);
 
   async function refreshSales(salesPageOverride?: number) {
     if (!token) return;
@@ -93,7 +110,8 @@ export default function SalesPage() {
   async function loadProductsPicker() {
     if (!token) return;
     const ps = await api.products.list(token, {
-      tracksStock: true,
+      merchandiseForSale: true,
+      withBundleItems: true,
       page: 1,
       pageSize: PRODUCT_PICKER_PAGE_SIZE,
     });
@@ -121,7 +139,7 @@ export default function SalesPage() {
     () =>
       products.map((x) => ({
         value: x.id,
-        label: `${x.name}${x.sku ? ` (${x.sku})` : ''}`,
+        label: `${x.isBundle ? '[Pack] ' : ''}${x.name}${x.sku ? ` (${x.sku})` : ''}`,
       })),
     [products]
   );
@@ -139,12 +157,33 @@ export default function SalesPage() {
 
   const saleStockProblems = useMemo(() => {
     const msgs: string[] = [];
+    const needMap: Record<string, { label: string; qty: number }> = {};
+    function addNeed(id: string, label: string, q: number) {
+      if (!id) return;
+      const k = String(id);
+      if (!needMap[k]) needMap[k] = { label, qty: 0 };
+      needMap[k].qty += q;
+    }
     for (const ln of salePayload) {
       const pr = prodMap[ln.productId];
       if (!pr) continue;
-      const avail = typeof pr.stock === 'number' ? pr.stock : 0;
-      if (ln.qty > avail) {
-        msgs.push(`“${pr.name}”: necesitás ${ln.qty} u. pero hay ${avail} en depósito.`);
+      if (pr.isBundle && pr.bundleItems?.length) {
+        for (const bi of pr.bundleItems) {
+          const cid = String(bi.componentProductId ?? bi.componentProduct?.id ?? '');
+          const comp = prodMap[cid];
+          const nm = comp?.name ?? bi.componentProduct?.name ?? 'Producto';
+          const per = Math.max(1, Math.floor(Number(bi.qtyPerBundle ?? 1)));
+          addNeed(cid, nm, ln.qty * per);
+        }
+      } else if (pr.tracksStock !== false) {
+        addNeed(String(pr.id), pr.name, ln.qty);
+      }
+    }
+    for (const [id, { label, qty }] of Object.entries(needMap)) {
+      const comp = prodMap[id];
+      const avail = comp != null && typeof comp.stock === 'number' ? comp.stock : 0;
+      if (qty > avail) {
+        msgs.push(`“${label}”: necesitás ${qty} u. pero hay ${avail} en depósito.`);
       }
     }
     return msgs;
@@ -170,6 +209,7 @@ export default function SalesPage() {
   async function execCreateSale() {
     if (!token || !salePayload.length) return;
     await api.sales.create(token, { paymentMethod, lines: salePayload });
+    toast.success('Venta registrada');
     setLines([{ productId: '', qty: '1' }]);
     setPaymentMethod('CASH');
     setSalesPage(1);
@@ -178,6 +218,90 @@ export default function SalesPage() {
   }
 
   const canAskConfirm = salePayload.length > 0 && saleStockProblems.length === 0;
+
+  const editPayload = useMemo(
+    () =>
+      editLines
+        .map((ln) => ({
+          productId: ln.productId,
+          qty: Math.floor(Number(ln.qty) || 0),
+        }))
+        .filter((x) => x.productId && x.qty > 0),
+    [editLines]
+  );
+
+  const editProdMap = prodMap;
+
+  const editStockProblems = useMemo(() => {
+    const msgs: string[] = [];
+    const needMap: Record<string, { label: string; qty: number }> = {};
+    function addNeed(id: string, label: string, q: number) {
+      if (!id) return;
+      const k = String(id);
+      if (!needMap[k]) needMap[k] = { label, qty: 0 };
+      needMap[k].qty += q;
+    }
+    for (const ln of editPayload) {
+      const pr = editProdMap[ln.productId];
+      if (!pr) continue;
+      if (pr.isBundle && pr.bundleItems?.length) {
+        for (const bi of pr.bundleItems) {
+          const cid = String(bi.componentProductId ?? bi.componentProduct?.id ?? '');
+          const comp = editProdMap[cid];
+          const nm = comp?.name ?? bi.componentProduct?.name ?? 'Producto';
+          const per = Math.max(1, Math.floor(Number(bi.qtyPerBundle ?? 1)));
+          addNeed(cid, nm, ln.qty * per);
+        }
+      } else if (pr.tracksStock !== false) {
+        addNeed(String(pr.id), pr.name, ln.qty);
+      }
+    }
+    for (const [id, { label, qty }] of Object.entries(needMap)) {
+      const comp = editProdMap[id];
+      const avail = comp != null && typeof comp.stock === 'number' ? comp.stock : 0;
+      if (qty > avail) {
+        msgs.push(`“${label}”: necesitás ${qty} u. pero hay ${avail} en depósito.`);
+      }
+    }
+    return msgs;
+  }, [editPayload, editProdMap]);
+
+  async function openEditSale(s: SaleServer) {
+    if (!token) return;
+    setEditSaleId(s.id);
+    setEditOpen(true);
+    setEditLoading(true);
+    try {
+      const full = (await api.sales.get(token, s.id)) as SaleServer;
+      setEditPayment((full.paymentMethod as typeof editPayment) || 'CASH');
+      const ls = (full.lines || []).map((ln) => ({
+        productId: ln.product?.id || '',
+        qty: String(ln.qty ?? 1),
+      }));
+      setEditLines(ls.length ? ls : [{ productId: '', qty: '1' }]);
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function execEditSale() {
+    if (!token || !editSaleId || !editPayload.length) return;
+    await api.sales.patch(token, editSaleId, { paymentMethod: editPayment, lines: editPayload });
+    toast.success('Venta actualizada');
+    setEditOpen(false);
+    setEditSaleId(null);
+    await refreshSales();
+    await loadProductsPicker();
+  }
+
+  async function execDeleteSale() {
+    if (!token || !deleteTarget) return;
+    await api.sales.remove(token, deleteTarget.id);
+    toast.success('Venta eliminada');
+    setDeleteTarget(null);
+    await refreshSales();
+    await loadProductsPicker();
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -232,8 +356,9 @@ export default function SalesPage() {
               {lines.map((ln, idx) => {
                 const pr = ln.productId ? prodMap[ln.productId] : null;
                 const q = Math.floor(Number(ln.qty) || 0);
-                const avail = pr != null && typeof pr.stock === 'number' ? pr.stock : pr ? 0 : null;
-                const over = pr != null && q > 0 && avail != null && q > avail;
+                const avail =
+                  pr != null && !pr.isBundle && typeof pr.stock === 'number' ? pr.stock : pr && !pr.isBundle ? 0 : null;
+                const over = pr != null && !pr.isBundle && q > 0 && avail != null && q > avail;
 
                 return (
                   <div key={idx} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -243,7 +368,7 @@ export default function SalesPage() {
                           options={productOptions}
                           value={ln.productId}
                           onChange={(id) => updateLine(idx, { productId: id })}
-                          emptyLabel="Producto…"
+                          emptyLabel="Producto o pack…"
                         />
                       </div>
                       <div className="sale-line__controls">
@@ -265,17 +390,23 @@ export default function SalesPage() {
                         </Button>
                       </div>
                     </div>
-                    {ln.productId && pr && q > 0 && avail != null ? (
+                    {ln.productId && pr && q > 0 ? (
                       <div style={{ fontSize: 12, paddingLeft: 2 }}>
-                        {over ? (
-                          <span role="alert" style={{ fontWeight: 750, color: p.dangerText }}>
-                            Cantidad solicitada ({q}) mayor al disponible ({avail} u.).
-                          </span>
-                        ) : (
+                        {pr.isBundle ? (
                           <span style={{ color: p.mutedText }}>
-                            Stock disponible: <strong style={{ color: p.text }}>{avail}</strong> u.
+                            Pack: el stock se valida por cada producto del catálogo que compone el pack (ver alerta arriba si falta).
                           </span>
-                        )}
+                        ) : avail != null ? (
+                          over ? (
+                            <span role="alert" style={{ fontWeight: 750, color: p.dangerText }}>
+                              Cantidad solicitada ({q}) mayor al disponible ({avail} u.).
+                            </span>
+                          ) : (
+                            <span style={{ color: p.mutedText }}>
+                              Stock disponible: <strong style={{ color: p.text }}>{avail}</strong> u.
+                            </span>
+                          )
+                        ) : null}
                       </div>
                     ) : null}
                   </div>
@@ -331,20 +462,128 @@ export default function SalesPage() {
         onConfirm={execCreateSale}
       />
 
+      <Modal open={editOpen} title="Editar venta" onClose={() => setEditOpen(false)} panelStyle={{ maxWidth: 560 }}>
+        {editLoading ? (
+          <div style={{ padding: 24, textAlign: 'center', opacity: 0.8 }}>Cargando…</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ fontSize: 13, opacity: 0.75 }}>
+              Se revierten los movimientos de stock de la venta anterior y se aplican los nuevos al guardar.
+            </div>
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: 6, fontSize: 13 }}>Medio de pago</div>
+              <Select value={editPayment} onChange={(e) => setEditPayment(e.target.value as typeof editPayment)}>
+                <option value="CASH">Efectivo</option>
+                <option value="TRANSFER">Transferencia</option>
+                <option value="CARD">Tarjeta</option>
+              </Select>
+            </div>
+            {editStockProblems.length > 0 ? (
+              <div
+                role="alert"
+                style={{
+                  padding: '10px 12px',
+                  borderRadius: 12,
+                  background: p.dangerBg,
+                  border: `1px solid rgba(239,68,68,0.25)`,
+                  color: p.dangerText,
+                  fontSize: 13,
+                }}
+              >
+                <div style={{ fontWeight: 800, marginBottom: 6 }}>Stock insuficiente</div>
+                <ul style={{ margin: 0, paddingLeft: 18 }}>
+                  {editStockProblems.map((m, i) => (
+                    <li key={i}>{m}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+            <div style={{ fontWeight: 950, marginBottom: 6 }}>Líneas</div>
+            {editLines.map((ln, idx) => (
+              <div key={idx} className="sale-line" style={{ marginBottom: 8 }}>
+                <div className="sale-line__product">
+                  <SearchableSelect
+                    options={productOptions}
+                    value={ln.productId}
+                    onChange={(id) =>
+                      setEditLines((xs) => xs.map((l, i) => (i === idx ? { ...l, productId: id } : l)))
+                    }
+                    emptyLabel="Producto o pack…"
+                  />
+                </div>
+                <div className="sale-line__controls">
+                  <Input
+                    className="sale-line__qty"
+                    value={ln.qty}
+                    onChange={(e) =>
+                      setEditLines((xs) => xs.map((l, i) => (i === idx ? { ...l, qty: e.target.value } : l)))
+                    }
+                    inputMode="numeric"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={editLines.length <= 1}
+                    onClick={() => setEditLines((xs) => xs.filter((_, i) => i !== idx))}
+                  >
+                    Quitar
+                  </Button>
+                </div>
+              </div>
+            ))}
+            <Button type="button" variant="outline" size="sm" onClick={() => setEditLines((xs) => [...xs, { productId: '', qty: '1' }])}>
+              + línea
+            </Button>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+              <Button type="button" variant="outline" onClick={() => setEditOpen(false)}>
+                Cancelar
+              </Button>
+              <Button type="button" disabled={!editPayload.length || editStockProblems.length > 0} onClick={execEditSale}>
+                Guardar cambios
+              </Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <ConfirmModal
+        open={deleteTarget != null}
+        title="Borrar venta"
+        confirmLabel="Borrar"
+        cancelLabel="Cancelar"
+        description={
+          deleteTarget ? (
+            <>
+              Se eliminará el registro y se revertirán los movimientos de stock asociados. Total:{' '}
+              <strong>{moneyArs(`${deleteTarget.totalAmount ?? '0'}`)}</strong>
+              {deleteTarget.soldAt ? (
+                <>
+                  {' '}
+                  · {new Date(deleteTarget.soldAt).toLocaleString('es-AR')}
+                </>
+              ) : null}
+            </>
+          ) : null
+        }
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={execDeleteSale}
+      />
+
       <Card>
         <CardSection style={{ padding: 0 }}>
           <div className={THEMED_SCROLLBAR_CLASS} style={tableHorizontalScrollWrapStyle}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 960 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1040 }}>
               <thead>
                 <tr style={{ textAlign: 'left', borderBottom: `1px solid ${p.cardBorder}` }}>
                   <th style={{ padding: '12px 14px' }}>Cuándo</th>
                   <th style={{ padding: '12px 14px' }}>Pago</th>
                   <th style={{ padding: '12px 14px' }}>Total</th>
                   <th style={{ padding: '12px 14px' }}>Ítems</th>
+                  <th style={{ padding: '12px 14px', textAlign: 'right' }}>Acciones</th>
                 </tr>
               </thead>
               <tbody>
-                {loading ? <TableLoadingRow colSpan={4} /> : null}
+                {loading ? <TableLoadingRow colSpan={5} /> : null}
                 {!loading &&
                   sales.map((s) => (
                     <tr key={s.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
@@ -355,11 +594,36 @@ export default function SalesPage() {
                         <Badge label={String(s.paymentMethod || '—')} tone="neutral" />
                       </td>
                       <td style={{ padding: '12px 14px', fontWeight: 900 }}>{moneyArs(`${s.totalAmount ?? '0'}`)}</td>
-                      <td style={{ padding: '12px 14px', fontSize: 13, opacity: 0.86 }}>
-                        {(s.lines || [])
-                          .slice(0, 6)
-                          .map((ln) => `${ln.lineDescription || ln.product?.name || 'Producto'} x${ln.qty}`)
-                          .join(' · ') || '—'}
+                      <td style={{ padding: '12px 14px', fontSize: 13, opacity: 0.86, maxWidth: 420 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                          {(s.lines || []).slice(0, 8).map((ln, li) => (
+                            <div key={ln.id || `${s.id}-${li}`}>
+                              {ln.lineDescription || ln.product?.name || 'Producto'}{' '}
+                              <span style={{ opacity: 0.75 }}>×{ln.qty}</span>
+                              {ln.unitPrice != null ? (
+                                <span style={{ opacity: 0.65 }}>
+                                  {' '}
+                                  @ {moneyArs(ln.unitPrice)}
+                                </span>
+                              ) : null}
+                            </div>
+                          ))}
+                          {!s.lines?.length ? '—' : null}
+                        </div>
+                      </td>
+                      <td style={{ padding: '12px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                        <Button type="button" variant="outline" size="sm" onClick={() => void openEditSale(s)}>
+                          Editar
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          style={{ marginLeft: 8 }}
+                          onClick={() => setDeleteTarget(s)}
+                        >
+                          Borrar
+                        </Button>
                       </td>
                     </tr>
                   ))}

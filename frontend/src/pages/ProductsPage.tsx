@@ -1,10 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { usePalette } from '../theme/ThemeProvider';
 import { BarDrinkModal, type BarDrinkRow } from '../components/forms/BarDrinkModal';
+import { PromoPackModal } from '../components/forms/PromoPackModal';
 import { CategoryQuickModal } from '../components/forms/CategoryQuickModal';
 import { ProductCreateModal } from '../components/forms/ProductCreateModal';
+import { ProductStockEditModal } from '../components/forms/ProductStockEditModal';
 import { SupplierQuickModal } from '../components/forms/SupplierQuickModal';
 import { ConfirmModal } from '../components/inline/ConfirmModal';
 import { PaginationBar } from '../components/inline/PaginationBar';
@@ -45,6 +48,11 @@ type Prod = {
   happyHourEnabled?: boolean;
   happyHourMode?: string | null;
   happyHourUnitPrice?: string | number | null;
+  isBundle?: boolean;
+  bundleItems?: Array<{
+    qtyPerBundle?: number;
+    componentProduct?: { name?: string | null } | null;
+  }>;
 };
 
 function moneyArs(amount: string | number) {
@@ -55,9 +63,9 @@ function moneyArs(amount: string | number) {
 
 function happyHourSummary(x: Prod): string {
   if (!x.happyHourEnabled || !x.happyHourMode || x.happyHourMode === 'OFF') return '—';
-  if (x.happyHourMode === 'SPECIAL_PRICE') return `Precio HH ${moneyArs(`${x.happyHourUnitPrice ?? '0'}`)}`;
-  if (x.happyHourMode === 'DOUBLE_QTY') return 'Cantidad ×2 al precio lista';
-  if (x.happyHourMode === 'PROMO_2FOR1') return 'Promo 2×1 (mitad precio unit.)';
+  if (x.happyHourMode === 'PROMO_2FOR1') return 'Happy hour 2×1 (pagás 1 lista, 2 tragos)';
+  if (x.happyHourMode === 'SPECIAL_PRICE') return `HH precio especial ${moneyArs(`${x.happyHourUnitPrice ?? '0'}`)} (antiguo)`;
+  if (x.happyHourMode === 'DOUBLE_QTY') return 'HH doble cantidad (antiguo)';
   return x.happyHourMode;
 }
 
@@ -66,7 +74,7 @@ export default function ProductsPage() {
   const p = usePalette();
   const { pageSize: listPageSize } = useListPageSize();
   const tablePageSize = clampListPageSizeProducts(listPageSize);
-  const [tab, setTab] = useState<'stock' | 'tragos'>('stock');
+  const [tab, setTab] = useState<'stock' | 'tragos' | 'promos'>('stock');
   const [loading, setLoading] = useState(true);
   const [items, setItems] = useState<Prod[]>([]);
   const [total, setTotal] = useState(0);
@@ -87,6 +95,12 @@ export default function ProductsPage() {
   const [note, setNote] = useState('');
   const [pendingDeactivate, setPendingDeactivate] = useState<Prod | null>(null);
   const [createMetaLoading, setCreateMetaLoading] = useState(false);
+  const [promoOpen, setPromoOpen] = useState(false);
+  const [promoEditId, setPromoEditId] = useState<string | null>(null);
+  const [promoMetaLoading, setPromoMetaLoading] = useState(false);
+  const [stockEditOpen, setStockEditOpen] = useState(false);
+  const [stockEditId, setStockEditId] = useState<string | null>(null);
+  const [stockEditMetaLoading, setStockEditMetaLoading] = useState(false);
 
   async function refresh() {
     if (!token) return;
@@ -94,7 +108,11 @@ export default function ProductsPage() {
     try {
       const prods = await api.products.list(token, {
         q: q.trim() || undefined,
-        tracksStock: tab === 'stock',
+        ...(tab === 'stock'
+          ? { tracksStock: true }
+          : tab === 'tragos'
+            ? { tracksStock: false }
+            : { isBundle: true, withBundleItems: true }),
         page,
         pageSize: tablePageSize,
       });
@@ -148,6 +166,29 @@ export default function ProductsPage() {
     setAdjOpen(true);
   }
 
+  function adjustDeltaNum() {
+    const n = Math.trunc(Number(String(qtyDelta).replace(',', '.')));
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  /** El stock final no puede ser menor que 0: el delta mínimo es menos el stock actual. */
+  function clampAdjustDelta(raw: number) {
+    const stock = adjustTarget?.stock ?? 0;
+    return Math.max(-stock, Math.trunc(raw));
+  }
+
+  function bumpAdjustDelta(d: number) {
+    setQtyDelta(String(clampAdjustDelta(adjustDeltaNum() + d)));
+  }
+
+  function openEditStockProduct(x: Prod) {
+    if (!token) return;
+    setStockEditId(x.id);
+    setStockEditOpen(true);
+    setStockEditMetaLoading(true);
+    refreshMetaOnly().finally(() => setStockEditMetaLoading(false));
+  }
+
   function openNewTrago() {
     setEditingDrink(null);
     setBarDrinkOpen(true);
@@ -160,10 +201,13 @@ export default function ProductsPage() {
 
   async function onAdjust() {
     if (!token || !adjustTarget) return;
+    const d = adjustDeltaNum();
+    if (d === 0) return;
     await api.products.adjust(token, adjustTarget.id, {
-      qtyDelta: Number(qtyDelta.replace(',', '.')) || 0,
+      qtyDelta: d,
       note: note.trim() || null,
     });
+    toast.success('Stock ajustado');
     setAdjOpen(false);
     setAdjustTarget(null);
     await refresh();
@@ -172,10 +216,27 @@ export default function ProductsPage() {
   async function execDeactivate() {
     if (!token || !pendingDeactivate) return;
     await api.products.deactivate(token, pendingDeactivate.id);
+    toast.success('Producto sacado del catálogo');
     await refresh();
   }
 
-  const isBar = (x: Prod) => x.tracksStock === false;
+  const isBar = (x: Prod) => x.tracksStock === false && !x.isBundle;
+
+  function openNewPromo() {
+    if (!token) return;
+    setPromoEditId(null);
+    setPromoOpen(true);
+    setPromoMetaLoading(true);
+    refreshMetaOnly().finally(() => setPromoMetaLoading(false));
+  }
+
+  function openEditPromo(x: Prod) {
+    if (!token) return;
+    setPromoEditId(x.id);
+    setPromoOpen(true);
+    setPromoMetaLoading(true);
+    refreshMetaOnly().finally(() => setPromoMetaLoading(false));
+  }
 
   if (!token) return null;
 
@@ -188,12 +249,16 @@ export default function ProductsPage() {
             {tab === 'stock' ? (
               <>
                 Alta de mercadería con stock. El ingreso habitual es <strong>Compras → Recibir</strong>. Saldo inicial excepcional en el alta; correcciones:{' '}
-                <strong>Ajuste</strong>.
+                <strong>Ajuste</strong>. <strong>Sacar del catálogo</strong> oculta el producto en listas y ventas nuevas (no borra historial).
               </>
-            ) : (
+            ) : tab === 'tragos' ? (
               <>
                 Tragos BAR: sin movimiento de depósito al venderlos; el consumo de botellas se registra aparte al cierre del servicio. Solo proveedor por defecto; venta desde{' '}
                 <strong>Ventas BAR</strong>.
+              </>
+            ) : (
+              <>
+                Promos / packs: un ítem de venta que agrupa productos del catálogo. Al vender un pack se descuenta el stock de cada componente; la alta del pack no exige stock.
               </>
             )}
           </div>
@@ -220,6 +285,17 @@ export default function ProductsPage() {
             >
               Tragos
             </Button>
+            <Button
+              type="button"
+              variant={tab === 'promos' ? 'primary' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setTab('promos');
+                setPage(1);
+              }}
+            >
+              Promos / packs
+            </Button>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -236,9 +312,13 @@ export default function ProductsPage() {
             <Button type="button" onClick={openCreateProduct}>
               Nuevo producto
             </Button>
-          ) : (
+          ) : tab === 'tragos' ? (
             <Button type="button" onClick={openNewTrago}>
               Nuevo trago
+            </Button>
+          ) : (
+            <Button type="button" onClick={openNewPromo}>
+              Nueva promo / pack
             </Button>
           )}
         </div>
@@ -248,7 +328,7 @@ export default function ProductsPage() {
         <Card>
           <CardSection style={{ padding: 0 }}>
             <div className={THEMED_SCROLLBAR_CLASS} style={tableHorizontalScrollWrapStyle}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1020 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 1120 }}>
                 <thead>
                   <tr style={{ textAlign: 'left', borderBottom: `1px solid ${p.cardBorder}` }}>
                     <th style={{ padding: '12px 14px' }}>Producto</th>
@@ -280,11 +360,14 @@ export default function ProductsPage() {
                           />
                         </td>
                         <td style={{ padding: '12px 14px', display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <Button type="button" variant="outline" size="sm" onClick={() => openEditStockProduct(x)}>
+                            Editar
+                          </Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => openAdjust(x)}>
                             Ajuste
                           </Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => setPendingDeactivate(x)}>
-                            Desactivar
+                            Sacar del catálogo
                           </Button>
                         </td>
                       </tr>
@@ -297,7 +380,7 @@ export default function ProductsPage() {
             </div>
           </CardSection>
         </Card>
-      ) : (
+      ) : tab === 'tragos' ? (
         <Card>
           <CardSection style={{ padding: 0 }}>
             <div className={THEMED_SCROLLBAR_CLASS} style={tableHorizontalScrollWrapStyle}>
@@ -328,7 +411,57 @@ export default function ProductsPage() {
                             Editar
                           </Button>
                           <Button type="button" variant="outline" size="sm" onClick={() => setPendingDeactivate(x)}>
-                            Desactivar
+                            Sacar del catálogo
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+            <div style={{ padding: '0 16px 16px' }}>
+              <PaginationBar page={page} pageSize={tablePageSize} total={total} onPageChange={setPage} disabled={loading} />
+            </div>
+          </CardSection>
+        </Card>
+      ) : (
+        <Card>
+          <CardSection style={{ padding: 0 }}>
+            <div className={THEMED_SCROLLBAR_CLASS} style={tableHorizontalScrollWrapStyle}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+                <thead>
+                  <tr style={{ textAlign: 'left', borderBottom: `1px solid ${p.cardBorder}` }}>
+                    <th style={{ padding: '12px 14px' }}>Pack</th>
+                    <th style={{ padding: '12px 14px' }}>Precio venta</th>
+                    <th style={{ padding: '12px 14px' }}>Contenido (por 1 pack)</th>
+                    <th style={{ padding: '12px 14px' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {loading ? <TableLoadingRow colSpan={4} /> : null}
+                  {!loading &&
+                    items.map((x) => (
+                      <tr key={x.id} style={{ borderBottom: `1px solid ${p.cardBorder}` }}>
+                        <td style={{ padding: '12px 14px', fontWeight: 750 }}>
+                          <Badge label="Pack" tone="neutral" />
+                          <div style={{ marginTop: 6 }}>{x.name}</div>
+                          <div style={{ fontSize: 13, opacity: 0.7 }}>{x.sku || 'Sin SKU'}</div>
+                        </td>
+                        <td style={{ padding: '12px 14px' }}>{moneyArs(`${x.salePrice ?? '0'}`)}</td>
+                        <td style={{ padding: '12px 14px', fontSize: 13, lineHeight: 1.45, maxWidth: 420 }}>
+                          {(x.bundleItems || [])
+                            .map(
+                              (b) =>
+                                `${b.componentProduct?.name ?? '—'} × ${Math.max(1, Number(b.qtyPerBundle ?? 1) || 1)}`
+                            )
+                            .join(' · ') || '—'}
+                        </td>
+                        <td style={{ padding: '12px 14px', display: 'flex', gap: 8, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          <Button type="button" variant="outline" size="sm" onClick={() => openEditPromo(x)}>
+                            Editar
+                          </Button>
+                          <Button type="button" variant="outline" size="sm" onClick={() => setPendingDeactivate(x)}>
+                            Sacar del catálogo
                           </Button>
                         </td>
                       </tr>
@@ -354,6 +487,38 @@ export default function ProductsPage() {
         onRequestNewSupplier={() => setSupplierQuickOpen(true)}
         onRequestNewCategory={() => setCategoryQuickOpen(true)}
         onCreated={() => refresh()}
+      />
+
+      <ProductStockEditModal
+        open={stockEditOpen && Boolean(stockEditId)}
+        onClose={() => {
+          setStockEditOpen(false);
+          setStockEditId(null);
+        }}
+        token={token}
+        productId={stockEditId}
+        suppliers={suppliers}
+        categories={cats}
+        loadingMeta={stockEditMetaLoading}
+        onRefreshMeta={refreshMetaOnly}
+        onRequestNewSupplier={() => setSupplierQuickOpen(true)}
+        onRequestNewCategory={() => setCategoryQuickOpen(true)}
+        onSaved={() => void refresh()}
+      />
+
+      <PromoPackModal
+        open={promoOpen}
+        onClose={() => {
+          setPromoOpen(false);
+          setPromoEditId(null);
+        }}
+        token={token}
+        suppliers={suppliers}
+        categories={cats}
+        loadingMeta={promoMetaLoading}
+        editingId={promoEditId}
+        onRefreshMeta={refreshMetaOnly}
+        onSaved={() => void refresh()}
       />
 
       <BarDrinkModal
@@ -389,22 +554,91 @@ export default function ProductsPage() {
 
       <Modal open={adjOpen} title={adjustTarget ? `Ajuste manual · ${adjustTarget.name}` : 'Ajuste'} onClose={() => setAdjOpen(false)}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ fontSize: 13, opacity: 0.75 }}>
-            Usá valores positivos o negativos (por ejemplo corrige roturas/conteo). Stock final no puede quedar negativo.
+          <div style={{ fontSize: 13, opacity: 0.75, lineHeight: 1.45 }}>
+            Sumá o restá unidades al stock del depósito (roturas, conteo, correcciones).
+          </div>
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.82,
+              lineHeight: 1.45,
+              padding: '10px 12px',
+              borderRadius: 12,
+              border: `1px solid ${p.cardBorder}`,
+              background: p.inputBg,
+            }}
+          >
+            El <strong>mínimo en depósito es 0</strong>: no se puede ajustar a negativo. Si los números no cierran, puede
+            haber un mal conteo o falta registrar una venta o una compra recibida.
+          </div>
+          {adjustTarget ? (
+            <div style={{ fontSize: 13, fontWeight: 750 }}>
+              Stock actual: <strong style={{ color: p.text }}>{adjustTarget.stock ?? 0}</strong> u.
+              {adjustDeltaNum() !== 0 ? (
+                <>
+                  {' → '}
+                  <strong style={{ color: p.text }}>{(adjustTarget.stock ?? 0) + adjustDeltaNum()}</strong> u.
+                </>
+              ) : null}
+            </div>
+          ) : null}
+          <div>
+            <div style={{ fontWeight: 800, marginBottom: 8 }}>Cambio en unidades</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
+              <Button type="button" variant="outline" size="sm" onClick={() => bumpAdjustDelta(-10)}>
+                −10
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => bumpAdjustDelta(-1)}>
+                −1
+              </Button>
+              <Input
+                value={qtyDelta}
+                onChange={(e) => {
+                  const v = e.target.value;
+                  if (!adjustTarget) {
+                    setQtyDelta(v);
+                    return;
+                  }
+                  if (v === '' || v === '-') {
+                    setQtyDelta(v);
+                    return;
+                  }
+                  const n = Math.trunc(Number(v.replace(',', '.')));
+                  if (!Number.isFinite(n)) {
+                    setQtyDelta(v);
+                    return;
+                  }
+                  setQtyDelta(String(clampAdjustDelta(n)));
+                }}
+                onBlur={() => {
+                  if (!adjustTarget) return;
+                  const v = qtyDelta.trim();
+                  if (v === '' || v === '-') setQtyDelta('0');
+                  else {
+                    const n = Math.trunc(Number(v.replace(',', '.')));
+                    setQtyDelta(String(clampAdjustDelta(Number.isFinite(n) ? n : 0)));
+                  }
+                }}
+                inputMode="numeric"
+                style={{ width: 72, textAlign: 'center', fontWeight: 800 }}
+              />
+              <Button type="button" variant="outline" size="sm" onClick={() => bumpAdjustDelta(1)}>
+                +1
+              </Button>
+              <Button type="button" variant="outline" size="sm" onClick={() => bumpAdjustDelta(10)}>
+                +10
+              </Button>
+            </div>
           </div>
           <div>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Delta (+/−)</div>
-            <Input value={qtyDelta} onChange={(e) => setQtyDelta(e.target.value)} inputMode="numeric" />
-          </div>
-          <div>
-            <div style={{ fontWeight: 800, marginBottom: 6 }}>Nota</div>
+            <div style={{ fontWeight: 800, marginBottom: 6 }}>Nota (opcional)</div>
             <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Ej: conteo cámara X" />
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
             <Button type="button" variant="outline" onClick={() => setAdjOpen(false)}>
               Cancelar
             </Button>
-            <Button type="button" onClick={onAdjust}>
+            <Button type="button" onClick={onAdjust} disabled={adjustDeltaNum() === 0}>
               Aplicar
             </Button>
           </div>
@@ -413,18 +647,21 @@ export default function ProductsPage() {
 
       <ConfirmModal
         open={Boolean(pendingDeactivate)}
-        title="Desactivar producto"
+        title="Sacar del catálogo"
         danger
-        confirmLabel="Desactivar"
+        confirmLabel="Sacar del catálogo"
         cancelLabel="Cancelar"
         description={
           pendingDeactivate ? (
             <>
-              ¿Desactivar <strong>«{pendingDeactivate.name}»</strong>?{' '}
+              <strong>«{pendingDeactivate.name}»</strong> dejará de aparecer en listas y en ventas nuevas; no se borra el
+              historial de movimientos ni ventas pasadas.{' '}
               {pendingDeactivate && isBar(pendingDeactivate) ? (
-                <span>Los tragos se pueden dar de baja sin condición de stock.</span>
+                <span>Los tragos se pueden sacar sin condición de stock.</span>
+              ) : pendingDeactivate?.isBundle ? (
+                <span>Los packs no tienen stock propio en depósito.</span>
               ) : (
-                <span>Solo puede hacerse si el stock es cero.</span>
+                <span>La mercadería solo se puede sacar si el stock en depósito es cero.</span>
               )}
             </>
           ) : (

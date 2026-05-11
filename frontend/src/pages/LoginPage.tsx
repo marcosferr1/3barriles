@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Button, Card, CardSection, Input } from '../components/inline/Primitives';
+import { toast } from '@/lib/toast';
 
 const GREEN = '#1F3D2B';
 
@@ -12,17 +13,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
     setLoading(true);
     try {
       await login(email, password);
+      toast.success('Sesión iniciada');
       navigate('/app');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Error al iniciar sesión');
+    } catch {
+      // Credenciales inválidas: toast.error desde api/client.
     } finally {
       setLoading(false);
     }
@@ -85,21 +85,6 @@ export default function LoginPage() {
                 </label>
                 <Input id="password" value={password} onChange={(e) => setPassword(e.target.value)} type="password" autoComplete="current-password" style={inputLight} />
               </div>
-              {error ? (
-                <div
-                  style={{
-                    borderRadius: 12,
-                    border: '1px solid rgba(239,68,68,0.45)',
-                    background: 'rgba(239,68,68,0.08)',
-                    padding: '10px 12px',
-                    fontSize: 13,
-                    fontWeight: 650,
-                    color: '#991b1b',
-                  }}
-                >
-                  {error}
-                </div>
-              ) : null}
               <Button
                 type="submit"
                 disabled={loading}

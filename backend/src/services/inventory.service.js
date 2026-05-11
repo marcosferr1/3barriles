@@ -193,6 +193,16 @@ async function receivePurchaseOrder(purchaseOrderId, userId) {
  */
 function resolveSaleLine(product, ln) {
   const userQty = Math.floor(Number(ln.qty));
+  if (product.isBundle) {
+    const salePrice = toNum(product.salePrice);
+    return {
+      productId: product.id,
+      qty: userQty,
+      unitPrice: salePrice,
+      happyHourApplied: false,
+      lineDescription: `${product.name} (pack)`,
+    };
+  }
   const tracksStock = product.tracksStock !== false;
   const salePrice = toNum(product.salePrice);
   let effQty = userQty;
@@ -247,6 +257,168 @@ function resolveSaleLine(product, ln) {
 }
 
 /**
+ * Valida líneas, agrega necesidades de stock (incluye componentes de packs) y devuelve total + filas listas para persistir.
+ * @param {import('sequelize').Transaction} transaction
+ * @param {Array<{ productId: string, qty: number, happyHour?: boolean}>} lines
+ */
+async function prepareSaleLines(transaction, lines) {
+  /** @type {Record<string, number>} */
+  const stockNeed = {};
+  /** @type {Record<string, string>} */
+  const stockLabel = {};
+  /** @type {Array<{ product: import('sequelize').Model; row: ReturnType<typeof resolveSaleLine>; bundleItems: import('sequelize').Model[] | null }>} */
+  const prepared = [];
+  let total = 0;
+
+  for (const ln of lines) {
+    const userQty = Math.floor(Number(ln.qty));
+    if (!ln.productId || userQty < 1) {
+      const err = new Error('Línea inválida');
+      err.statusCode = 400;
+      throw err;
+    }
+    // Solo bloquear la fila de products: no incluir bundleItems aquí (LEFT JOIN + FOR UPDATE falla en PostgreSQL).
+    const product = await db.Product.findByPk(ln.productId, {
+      transaction,
+      lock: Transaction.LOCK.UPDATE,
+    });
+    if (!product || !product.active) {
+      const err = new Error(`Producto no disponible: ${ln.productId}`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    let bundleItems = null;
+    if (product.isBundle) {
+      bundleItems = await db.ProductBundleItem.findAll({
+        where: { bundleProductId: product.id },
+        transaction,
+      });
+    }
+
+    const row = resolveSaleLine(product, ln);
+    if (!Number.isFinite(row.unitPrice) || row.unitPrice < 0) {
+      const err = new Error(`Precio de venta inválido para "${product.name}"`);
+      err.statusCode = 400;
+      throw err;
+    }
+
+    if (product.isBundle) {
+      const bis = bundleItems || [];
+      if (!bis.length) {
+        const err = new Error(`El pack "${product.name}" no tiene productos configurados`);
+        err.statusCode = 400;
+        throw err;
+      }
+      for (const bi of bis) {
+        const comp = await db.Product.findByPk(bi.componentProductId, {
+          transaction,
+          lock: Transaction.LOCK.UPDATE,
+        });
+        if (!comp || !comp.active) {
+          const err = new Error(`Componente del pack no disponible (${bi.componentProductId})`);
+          err.statusCode = 400;
+          throw err;
+        }
+        if (comp.tracksStock === false || comp.isBundle) {
+          const err = new Error(
+            `El pack "${product.name}" incluye un ítem inválido («${comp.name}»: debe ser mercadería con stock, no otro pack ni trago)`
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+        const per = Math.max(1, Math.floor(Number(bi.qtyPerBundle)));
+        const needAdd = row.qty * per;
+        const cid = String(comp.id);
+        stockNeed[cid] = (stockNeed[cid] || 0) + needAdd;
+        stockLabel[cid] = comp.name;
+      }
+    } else if (product.tracksStock !== false) {
+      const cid = String(product.id);
+      stockNeed[cid] = (stockNeed[cid] || 0) + row.qty;
+      stockLabel[cid] = product.name;
+    }
+
+    total += row.qty * row.unitPrice;
+    prepared.push({ product, row, bundleItems });
+  }
+
+  const stockIds = Object.keys(stockNeed);
+  const stocks = await getStockMap(stockIds, { transaction });
+  for (const [pid, need] of Object.entries(stockNeed)) {
+    const avail = stocks[pid] ?? 0;
+    if (avail < need) {
+      const err = new Error(
+        `Stock insuficiente para "${stockLabel[pid] || pid}" (${avail} disponibles; se requieren ${need})`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+  }
+
+  return { total, prepared };
+}
+
+/**
+ * @param {import('sequelize').Transaction} transaction
+ * @param {string} userId
+ * @param {string} saleId
+ * @param {Array<{ product: import('sequelize').Model; row: ReturnType<typeof resolveSaleLine>; bundleItems: import('sequelize').Model[] | null }>} prepared
+ */
+async function insertSaleLinesAndMovements(transaction, userId, saleId, prepared) {
+  for (const { product, row, bundleItems } of prepared) {
+    const sl = await db.SaleLine.create(
+      {
+        saleId,
+        productId: row.productId,
+        qty: row.qty,
+        unitPrice: row.unitPrice.toFixed(2),
+        happyHourApplied: row.happyHourApplied,
+        lineDescription: row.lineDescription,
+      },
+      { transaction }
+    );
+    if (product.isBundle) {
+      const bis = bundleItems?.length
+        ? bundleItems
+        : await db.ProductBundleItem.findAll({
+            where: { bundleProductId: product.id },
+            transaction,
+          });
+      for (const bi of bis) {
+        const per = Math.max(1, Math.floor(Number(bi.qtyPerBundle)));
+        const delta = row.qty * per;
+        await db.StockMovement.create(
+          {
+            productId: bi.componentProductId,
+            userId,
+            movementType: MOVEMENT_TYPES.SALE_OUT,
+            qtyDelta: -delta,
+            purchaseLineId: null,
+            saleLineId: sl.id,
+            note: null,
+          },
+          { transaction }
+        );
+      }
+    } else if (product.tracksStock !== false) {
+      await db.StockMovement.create(
+        {
+          productId: row.productId,
+          userId,
+          movementType: MOVEMENT_TYPES.SALE_OUT,
+          qtyDelta: -row.qty,
+          purchaseLineId: null,
+          saleLineId: sl.id,
+          note: null,
+        },
+        { transaction }
+      );
+    }
+  }
+}
+
+/**
  * @param {{ paymentMethod: string, lines: Array<{ productId: string, qty: number, happyHour?: boolean}> }} input
  */
 async function createSale(userId, input) {
@@ -262,49 +434,9 @@ async function createSale(userId, input) {
     throw err;
   }
 
-  const productIds = [...new Set(lines.map((l) => l.productId))];
   const t = await db.sequelize.transaction();
   try {
-    const stocks = await getStockMap(productIds, { transaction: t });
-
-    /** @type {Array<{ productId: string; qty: number; unitPrice: number; happyHourApplied: boolean; lineDescription: string }>} */
-    const resolved = [];
-
-    let total = 0;
-    for (const ln of lines) {
-      const userQty = Math.floor(Number(ln.qty));
-      if (!ln.productId || userQty < 1) {
-        const err = new Error('Línea inválida');
-        err.statusCode = 400;
-        throw err;
-      }
-      const product = await db.Product.findByPk(ln.productId, { transaction: t, lock: Transaction.LOCK.UPDATE });
-      if (!product || !product.active) {
-        const err = new Error(`Producto no disponible: ${ln.productId}`);
-        err.statusCode = 400;
-        throw err;
-      }
-
-      const row = resolveSaleLine(product, ln);
-      if (!Number.isFinite(row.unitPrice) || row.unitPrice < 0) {
-        const err = new Error(`Precio de venta inválido para "${product.name}"`);
-        err.statusCode = 400;
-        throw err;
-      }
-
-      if (product.tracksStock !== false) {
-        const available = stocks[String(product.id)];
-        if (available < row.qty) {
-          const err = new Error(`Stock insuficiente para "${product.name}" (${available} disponibles)`);
-          err.statusCode = 400;
-          throw err;
-        }
-        stocks[String(product.id)] = available - row.qty;
-      }
-
-      total += row.qty * row.unitPrice;
-      resolved.push({ ...row, deductStock: product.tracksStock !== false });
-    }
+    const { total, prepared } = await prepareSaleLines(t, lines);
 
     const sale = await db.Sale.create(
       {
@@ -316,36 +448,91 @@ async function createSale(userId, input) {
       { transaction: t }
     );
 
-    for (const row of resolved) {
-      const sl = await db.SaleLine.create(
-        {
-          saleId: sale.id,
-          productId: row.productId,
-          qty: row.qty,
-          unitPrice: row.unitPrice.toFixed(2),
-          happyHourApplied: row.happyHourApplied,
-          lineDescription: row.lineDescription,
-        },
-        { transaction: t }
-      );
-      if (row.deductStock) {
-        await db.StockMovement.create(
-          {
-            productId: row.productId,
-            userId,
-            movementType: MOVEMENT_TYPES.SALE_OUT,
-            qtyDelta: -row.qty,
-            purchaseLineId: null,
-            saleLineId: sl.id,
-            note: null,
-          },
-          { transaction: t }
-        );
-      }
-    }
+    await insertSaleLinesAndMovements(t, userId, sale.id, prepared);
 
     await t.commit();
     return sale.id;
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+}
+
+/**
+ * @param {string} saleId
+ * @param {string} userId
+ * @param {{ paymentMethod: string, lines: Array<{ productId: string, qty: number, happyHour?: boolean}> }} input
+ */
+async function updateSale(saleId, userId, input) {
+  const { paymentMethod, lines } = input;
+  if (!PAYMENT_METHODS.includes(paymentMethod)) {
+    const err = new Error('Medio de pago inválido');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!lines?.length) {
+    const err = new Error('La venta debe tener al menos una línea');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const t = await db.sequelize.transaction();
+  try {
+    const sale = await db.Sale.findByPk(saleId, { transaction: t, lock: Transaction.LOCK.UPDATE });
+    if (!sale) {
+      const err = new Error('Venta no encontrada');
+      err.statusCode = 404;
+      throw err;
+    }
+
+    const oldLines = await db.SaleLine.findAll({
+      where: { saleId },
+      attributes: ['id'],
+      transaction: t,
+    });
+    const oldIds = oldLines.map((r) => r.id);
+    if (oldIds.length) {
+      await db.StockMovement.destroy({ where: { saleLineId: oldIds }, transaction: t });
+    }
+    await db.SaleLine.destroy({ where: { saleId }, transaction: t });
+
+    const { total, prepared } = await prepareSaleLines(t, lines);
+
+    sale.paymentMethod = paymentMethod;
+    sale.totalAmount = total.toFixed(2);
+    await sale.save({ transaction: t });
+
+    await insertSaleLinesAndMovements(t, userId, sale.id, prepared);
+
+    await t.commit();
+    return sale.id;
+  } catch (e) {
+    await t.rollback();
+    throw e;
+  }
+}
+
+async function deleteSale(saleId) {
+  const t = await db.sequelize.transaction();
+  try {
+    const sale = await db.Sale.findByPk(saleId, { transaction: t, lock: Transaction.LOCK.UPDATE });
+    if (!sale) {
+      const err = new Error('Venta no encontrada');
+      err.statusCode = 404;
+      throw err;
+    }
+    const oldLines = await db.SaleLine.findAll({
+      where: { saleId },
+      attributes: ['id'],
+      transaction: t,
+    });
+    const oldIds = oldLines.map((r) => r.id);
+    if (oldIds.length) {
+      await db.StockMovement.destroy({ where: { saleLineId: oldIds }, transaction: t });
+    }
+    await db.SaleLine.destroy({ where: { saleId }, transaction: t });
+    await sale.destroy({ transaction: t });
+    await t.commit();
   } catch (e) {
     await t.rollback();
     throw e;
@@ -406,5 +593,7 @@ module.exports = {
   createDraftPurchase,
   receivePurchaseOrder,
   createSale,
+  updateSale,
+  deleteSale,
   adjustStock,
 };

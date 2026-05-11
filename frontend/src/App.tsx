@@ -1,6 +1,7 @@
 import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth/useAuth';
+import { RouteNavigationEffects } from './components/RouteNavigationEffects';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 
@@ -16,7 +17,9 @@ export default function App() {
   void bootstrapped;
 
   return (
-    <Routes>
+    <>
+      <RouteNavigationEffects />
+      <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route
         path="/app/*"
@@ -27,6 +30,7 @@ export default function App() {
         }
       />
       <Route path="*" element={<Navigate to="/app" replace />} />
-    </Routes>
+      </Routes>
+    </>
   );
 }
