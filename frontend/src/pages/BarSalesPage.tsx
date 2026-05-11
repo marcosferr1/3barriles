@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { DEFAULT_SUPPLIER_ID } from '../constants/defaultSupplier';
 import { usePalette } from '../theme/ThemeProvider';
 import { ConfirmModal } from '../components/inline/ConfirmModal';
@@ -221,6 +222,7 @@ export default function BarSalesPage() {
   async function execCreateSale() {
     if (!token || !salePayload.length) return;
     await api.sales.create(token, { paymentMethod, lines: salePayload });
+    toast.success('Venta BAR registrada');
     setLines([{ productId: '', qty: '1', happyHour: false }]);
     setPaymentMethod('CASH');
     setSalesPage(1);

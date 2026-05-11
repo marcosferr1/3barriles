@@ -118,6 +118,27 @@ async function summary(req, res, next) {
       order: [['soldAt', 'DESC']],
       limit: sLim,
     });
+    const recentSaleIds = recentSales.map((s) => s.id);
+    /** @type {Record<string, Array<import('sequelize').Model>>} */
+    const linesBySaleId = {};
+    if (recentSaleIds.length) {
+      const lineRows = await db.SaleLine.findAll({
+        where: { saleId: { [Op.in]: recentSaleIds } },
+        attributes: ['saleId', 'qty', 'unitPrice', 'lineDescription'],
+        include: [{ model: db.Product, as: 'product', attributes: ['id', 'name', 'isBundle'] }],
+        order: [['id', 'ASC']],
+      });
+      for (const ln of lineRows) {
+        const sid = String(ln.saleId);
+        if (!linesBySaleId[sid]) linesBySaleId[sid] = [];
+        linesBySaleId[sid].push(ln);
+      }
+    }
+    const recentSalesPayload = recentSales.map((s) => {
+      const j = s.toJSON();
+      j.lines = linesBySaleId[String(s.id)] || [];
+      return j;
+    });
 
     const topProductsRows = await db.sequelize.query(
       `SELECT p.id, p.name,
@@ -200,7 +221,7 @@ async function summary(req, res, next) {
       recentPurchases,
       recentPurchasesTotal: purchaseTotal,
       recentPurchasesHasMore: purchaseTotal > pLim,
-      recentSales,
+      recentSales: recentSalesPayload,
       recentSalesTotal: saleListTotal,
       recentSalesHasMore: saleListTotal > sLim,
       topProducts: topProductsRows,

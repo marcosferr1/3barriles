@@ -2,12 +2,21 @@ const db = require('../../models');
 const inventory = require('../services/inventory.service');
 const { parsePagination } = require('../utils/pagination');
 
-/** Ventas donde ninguna línea es mercadería con stock (solo tragos BAR). */
+/** Ventas BAR: solo tragos (sin mercadería con stock ni packs/promos). */
 function barSalesWhereLiteral() {
   return db.sequelize.literal(`NOT EXISTS (
     SELECT 1 FROM sale_lines sl
     INNER JOIN products p ON p.id = sl.product_id
-    WHERE sl.sale_id = "Sale"."id" AND p.tracks_stock = true
+    WHERE sl.sale_id = "Sale"."id" AND (p.tracks_stock = true OR p.is_bundle = true)
+  )`);
+}
+
+/** Ventas mercadería / packs: al menos una línea con stock o pack (excluye ventas solo de tragos BAR). */
+function merchandiseSalesWhereLiteral() {
+  return db.sequelize.literal(`EXISTS (
+    SELECT 1 FROM sale_lines sl
+    INNER JOIN products p ON p.id = sl.product_id
+    WHERE sl.sale_id = "Sale"."id" AND (p.tracks_stock = true OR p.is_bundle = true)
   )`);
 }
 
@@ -16,7 +25,7 @@ async function list(req, res, next) {
     const { page, pageSize, limit, offset } = parsePagination(req.query);
     const barSales = req.query.barSales === 'true';
 
-    const where = barSales ? barSalesWhereLiteral() : {};
+    const where = barSales ? barSalesWhereLiteral() : merchandiseSalesWhereLiteral();
 
     const total = await db.Sale.count({ where });
 
@@ -28,7 +37,7 @@ async function list(req, res, next) {
           model: db.SaleLine,
           as: 'lines',
           attributes: ['id', 'qty', 'unitPrice', 'happyHourApplied', 'lineDescription'],
-          include: [{ model: db.Product, as: 'product', attributes: ['id', 'name', 'sku', 'tracksStock'] }],
+          include: [{ model: db.Product, as: 'product', attributes: ['id', 'name', 'sku', 'tracksStock', 'isBundle'] }],
         },
       ],
       limit,
@@ -68,4 +77,31 @@ async function create(req, res, next) {
   }
 }
 
-module.exports = { list, get, create };
+async function patch(req, res, next) {
+  try {
+    const paymentMethod = req.body?.paymentMethod;
+    const lines = req.body?.lines;
+    await inventory.updateSale(req.params.id, req.user.id, { paymentMethod, lines });
+    const row = await db.Sale.findByPk(req.params.id, {
+      include: [{ model: db.SaleLine, as: 'lines', include: [{ model: db.Product, as: 'product' }] }],
+    });
+    return res.json(row);
+  } catch (e) {
+    const code = e.statusCode || 500;
+    if (code >= 400 && code < 500) return res.status(code).json({ error: e.message });
+    return next(e);
+  }
+}
+
+async function destroy(req, res, next) {
+  try {
+    await inventory.deleteSale(req.params.id);
+    return res.status(204).send();
+  } catch (e) {
+    const code = e.statusCode || 500;
+    if (code >= 400 && code < 500) return res.status(code).json({ error: e.message });
+    return next(e);
+  }
+}
+
+module.exports = { list, get, create, patch, destroy };

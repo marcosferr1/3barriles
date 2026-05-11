@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../auth/useAuth';
 import { api } from '../api/client';
+import { toast } from '@/lib/toast';
 import { usePalette } from '../theme/ThemeProvider';
 import { ProductCreateModal } from '../components/forms/ProductCreateModal';
 import { SupplierQuickModal } from '../components/forms/SupplierQuickModal';
@@ -166,6 +167,7 @@ export default function PurchaseOrdersPage() {
       .filter((x) => x.productId && x.qty > 0 && x.unitCost >= 0);
     if (!payload.length) return;
     await api.purchaseOrders.create(token, { supplierId, lines: payload });
+    toast.success('Orden de compra creada');
     setSupplierId('');
     setLines([{ productId: '', qty: '1', unitCost: '0' }]);
     setOrdersPage(1);
@@ -175,6 +177,7 @@ export default function PurchaseOrdersPage() {
   async function execReceivePurchase() {
     if (!token || !receivePoId) return;
     await api.purchaseOrders.receive(token, receivePoId);
+    toast.success('Compra recibida en depósito');
     await refreshOrdersAndSuppliers();
   }
 

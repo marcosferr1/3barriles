@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../../api/client';
+import { toast } from '@/lib/toast';
 import { Button, Input, Modal, Textarea } from '../inline/Primitives';
 
 type Supplier = { id: string; name: string };
@@ -39,6 +40,7 @@ export function SupplierQuickModal({
       email: email.trim() || undefined,
       notes: notes.trim() || undefined,
     })) as Supplier;
+    toast.success('Proveedor creado');
     reset();
     onCreated(row);
     onClose();

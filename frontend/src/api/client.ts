@@ -1,16 +1,28 @@
+import { toast } from '@/lib/toast';
+
 const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:4000';
 
-async function apiFetch(path: string, options?: RequestInit) {
+type ApiFetchMeta = { notifyError?: boolean };
+
+async function apiFetch(path: string, options?: RequestInit, meta?: ApiFetchMeta) {
+  const notifyError = meta?.notifyError !== false;
   const { headers: optsHeaders, ...rest } = options || {};
   const headers = new Headers(optsHeaders ?? undefined);
   if (!headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
   }
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...rest,
-    headers,
-  });
+  let res: Response;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...rest,
+      headers,
+    });
+  } catch {
+    const message = 'No se pudo conectar con el servidor';
+    if (notifyError) toast.error(message);
+    throw new Error(message);
+  }
 
   if (!res.ok) {
     let message = `HTTP ${res.status}`;
@@ -20,6 +32,7 @@ async function apiFetch(path: string, options?: RequestInit) {
     } catch {
       // ignore
     }
+    if (notifyError) toast.error(message);
     throw new Error(message);
   }
 
@@ -37,21 +50,25 @@ function buildQuery(params: Record<string, string | number | null | undefined>) 
   return qs ? `?${qs}` : '';
 }
 
-async function apiAuthFetch(token: string, path: string, options?: RequestInit) {
-  return apiFetch(path, {
-    ...options,
-    headers: {
-      ...(options?.headers || {}),
-      Authorization: `Bearer ${token}`,
+async function apiAuthFetch(token: string, path: string, options?: RequestInit, meta?: ApiFetchMeta) {
+  return apiFetch(
+    path,
+    {
+      ...options,
+      headers: {
+        ...(options?.headers || {}),
+        Authorization: `Bearer ${token}`,
+      },
     },
-  });
+    meta
+  );
 }
 
 export const api = {
   login: (body: { email: string; password: string }) =>
     apiFetch('/auth/login', { method: 'POST', body: JSON.stringify(body) }),
   me: (token: string) =>
-    apiFetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }),
+    apiFetch('/auth/me', { headers: { Authorization: `Bearer ${token}` } }, { notifyError: false }),
 
   dashboard: {
     summary: (
@@ -118,6 +135,9 @@ export const api = {
         q?: string;
         supplierId?: string;
         tracksStock?: boolean;
+        merchandiseForSale?: boolean;
+        withBundleItems?: boolean;
+        isBundle?: boolean;
         includeInactive?: boolean;
         page?: number;
         pageSize?: number;
@@ -127,12 +147,16 @@ export const api = {
         q: params?.q,
         supplierId: params?.supplierId,
         tracksStock: params?.tracksStock === true ? 'true' : params?.tracksStock === false ? 'false' : undefined,
+        merchandiseForSale: params?.merchandiseForSale ? 'true' : undefined,
+        withBundleItems: params?.withBundleItems ? 'true' : undefined,
+        isBundle: params?.isBundle === true ? 'true' : params?.isBundle === false ? 'false' : undefined,
         includeInactive: params?.includeInactive ? 'true' : undefined,
         page: params?.page,
         pageSize: params?.pageSize,
       });
       return apiAuthFetch(token, `/products${qs}`);
     },
+    get: (token: string, id: string) => apiAuthFetch(token, `/products/${encodeURIComponent(id)}`),
     create: (
       token: string,
       body: {
@@ -149,6 +173,8 @@ export const api = {
         happyHourEnabled?: boolean;
         happyHourMode?: 'OFF' | 'SPECIAL_PRICE' | 'DOUBLE_QTY' | 'PROMO_2FOR1';
         happyHourUnitPrice?: number | null;
+        isBundle?: boolean;
+        bundleItems?: Array<{ componentProductId: string; qtyPerBundle: number; productId?: string; qty?: number }>;
       }
     ) => apiAuthFetch(token, '/products', { method: 'POST', body: JSON.stringify(body) }),
     patch: (token: string, id: string, body: Record<string, unknown>) =>
@@ -192,6 +218,7 @@ export const api = {
       });
       return apiAuthFetch(token, `/sales${qs}`);
     },
+    get: (token: string, id: string) => apiAuthFetch(token, `/sales/${encodeURIComponent(id)}`),
     create: (
       token: string,
       body: {
@@ -199,5 +226,19 @@ export const api = {
         lines: Array<{ productId: string; qty: number; happyHour?: boolean }>;
       }
     ) => apiAuthFetch(token, '/sales', { method: 'POST', body: JSON.stringify(body) }),
+    patch: (
+      token: string,
+      id: string,
+      body: {
+        paymentMethod: 'CASH' | 'TRANSFER' | 'CARD';
+        lines: Array<{ productId: string; qty: number; happyHour?: boolean }>;
+      }
+    ) =>
+      apiAuthFetch(token, `/sales/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify(body),
+      }),
+    remove: (token: string, id: string) =>
+      apiAuthFetch(token, `/sales/${encodeURIComponent(id)}`, { method: 'DELETE' }),
   },
 };

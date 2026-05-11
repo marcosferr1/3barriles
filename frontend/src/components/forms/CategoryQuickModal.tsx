@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { api } from '../../api/client';
+import { toast } from '@/lib/toast';
 import { Button, Input, Modal } from '../inline/Primitives';
 
 type Cat = { id: string; name: string };
@@ -22,6 +23,7 @@ export function CategoryQuickModal({
   async function save() {
     if (!name.trim()) return;
     const row = (await api.categories.create(token, { name: name.trim() })) as Cat;
+    toast.success('Categoría creada');
     setName('');
     onCreated(row);
     onClose();
