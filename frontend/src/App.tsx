@@ -2,13 +2,14 @@ import React from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from './auth/useAuth';
 import { RouteNavigationEffects } from './components/RouteNavigationEffects';
+import { isBackOn } from './config/backOn';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { token, bootstrapped } = useAuth();
   if (!bootstrapped) return null;
-  if (!token) return <Navigate to="/login" replace />;
+  if (!isBackOn || !token) return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
@@ -29,7 +30,7 @@ export default function App() {
           </RequireAuth>
         }
       />
-      <Route path="*" element={<Navigate to="/app" replace />} />
+      <Route path="*" element={<Navigate to={isBackOn ? '/app' : '/login'} replace />} />
       </Routes>
     </>
   );

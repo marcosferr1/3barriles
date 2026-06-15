@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from '../api/client';
+import { isBackOn } from '../config/backOn';
 
 type Role = 'ADMIN' | 'OPERADOR';
 
@@ -23,6 +24,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     async function bootstrap() {
+      if (!isBackOn) {
+        localStorage.removeItem('token');
+        if (!cancelled) {
+          setToken(null);
+          setUser(null);
+          setBootstrapped(true);
+        }
+        return;
+      }
       try {
         if (!token) {
           setUser(null);
@@ -51,6 +61,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       user,
       bootstrapped,
       login: async (email, password) => {
+        if (!isBackOn) throw new Error('Backend cerrado');
         const result = await api.login({ email, password });
         localStorage.setItem('token', result.token);
         setToken(result.token);

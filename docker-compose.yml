@@ -41,6 +41,7 @@ services:
       context: ./frontend
       args:
         VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        BACK_ON: ${BACK_ON:-true}
     restart: unless-stopped
     depends_on:
       - backend
