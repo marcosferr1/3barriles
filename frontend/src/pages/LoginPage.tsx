@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 import { Button, Card, CardSection, Input } from '../components/inline/Primitives';
+import { isBackOn } from '../config/backOn';
 import { toast } from '@/lib/toast';
 
 const GREEN = '#1F3D2B';
@@ -59,9 +60,26 @@ export default function LoginPage() {
               height: 'auto',
             }}
           />
-     
+          {!isBackOn ? (
+            <p
+              style={{
+                margin: '18px 0 0',
+                fontSize: 14,
+                lineHeight: 1.5,
+                fontWeight: 600,
+                color: GREEN,
+                opacity: 0.9,
+              }}
+            >
+              El backend esta cerrado hasta nuevo aviso. Comunicate con{' '}
+              <a href="mailto:marcos.e.ferr@gmail.com" style={{ color: GREEN, fontWeight: 700 }}>
+                marcos.e.ferr@gmail.com
+              </a>
+            </p>
+          ) : null}
         </div>
 
+        {isBackOn ? (
         <Card
           style={{
             background: '#FFFFFF',
@@ -100,8 +118,8 @@ export default function LoginPage() {
             </form>
           </CardSection>
         </Card>
+        ) : null}
 
-  
       </div>
     </div>
   );

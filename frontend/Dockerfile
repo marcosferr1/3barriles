@@ -3,7 +3,9 @@ FROM node:20-alpine AS build
 WORKDIR /app
 
 ARG VITE_API_URL
+ARG BACK_ON=true
 ENV VITE_API_URL=${VITE_API_URL}
+ENV BACK_ON=${BACK_ON}
 
 COPY package.json package-lock.json* ./
 RUN npm ci
